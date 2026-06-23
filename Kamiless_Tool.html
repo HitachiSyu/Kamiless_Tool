@@ -6,8 +6,11 @@
 <style>
   *{box-sizing:border-box;}
   html,body{margin:0;height:100%;font-family:"Meiryo","Segoe UI",sans-serif;font-size:13px;color:#1f2937;}
-  #app{display:grid;grid-template-columns:300px 1fr 300px;grid-template-rows:44px 1fr;height:100vh;}
-  #toolbar{grid-column:1/4;display:flex;align-items:center;gap:7px;padding:0 10px;background:#1f2937;color:#fff;}
+  #app{display:grid;grid-template-columns:300px 1fr 300px;grid-template-rows:minmax(44px,auto) 1fr;height:100vh;}
+  #toolbar{grid-column:1/4;display:flex;flex-wrap:wrap;align-items:center;gap:6px;row-gap:4px;padding:5px 10px;background:#1f2937;color:#fff;}
+  #toolbar input[type=color]{width:30px;height:24px;padding:0;border:1px solid #4b5563;border-radius:4px;background:#374151;cursor:pointer;}
+  #toolbar input[type=number]{width:46px;padding:3px;border-radius:4px;border:1px solid #4b5563;background:#374151;color:#fff;font-size:12px;}
+  #toolbar label.cb{font-size:12px;color:#cbd5e1;display:flex;align-items:center;gap:3px;}
   #toolbar button,#toolbar label.btn{background:#374151;color:#fff;border:1px solid #4b5563;border-radius:5px;padding:5px 9px;cursor:pointer;font-size:12px;}
   #toolbar button:hover,#toolbar label.btn:hover{background:#4b5563;}
   #toolbar button:disabled{opacity:.4;cursor:default;}
@@ -44,6 +47,7 @@
   rect.bbox{fill:none;stroke:#2563eb;stroke-dasharray:4 3;stroke-width:1.5;vector-effect:non-scaling-stroke;pointer-events:none;}
   rect.handle{fill:#fff;stroke:#2563eb;stroke-width:1.5;vector-effect:non-scaling-stroke;cursor:nwse-resize;}
   rect.marquee{fill:rgba(37,99,235,.12);stroke:#2563eb;stroke-dasharray:3 2;stroke-width:1;vector-effect:non-scaling-stroke;}
+  rect.region{fill:rgba(245,158,11,.10);stroke:#f59e0b;stroke-dasharray:7 4;stroke-width:2;vector-effect:non-scaling-stroke;pointer-events:none;}
   line.guide{stroke:#f59e0b;stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none;}
   #tabs{display:flex;border-bottom:1px solid #e5e7eb;flex:none;}
   #tabs button{flex:1;border:none;background:#f9fafb;padding:9px 4px;cursor:pointer;font-size:12px;border-bottom:2px solid transparent;}
@@ -56,6 +60,19 @@
 </style>
 </head>
 <body>
+<div id="disclaimer" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;font-family:'Meiryo','Segoe UI',sans-serif;">
+  <div style="position:relative;background:#fff;max-width:680px;max-height:88vh;overflow:auto;border-radius:10px;padding:24px 28px;box-shadow:0 10px 40px rgba(0,0,0,.35);line-height:1.75;color:#1f2937;">
+    <a href="https://github.com/HitachiSyu/Kamiless_Tool" target="_blank" rel="noopener" style="position:absolute;top:18px;right:22px;font-size:13px;color:#2563eb;text-decoration:none;white-space:nowrap;">Githubへ ↗</a>
+    <h2 style="margin:0 0 16px;font-size:18px;padding-right:84px;">ご利用前の免責事項への同意について<br><span style="font-size:13px;color:#6b7280;font-weight:normal;">(Disclaimer &amp; Terms of Use)</span></h2>
+    <p>本ツールをご利用いただきありがとうございます。快適な開発のために、以下の免責事項をご確認・ご承諾の上でご利用ください。</p>
+    <p><b>非公式サードパーティ製ツール</b><br>本ツールは、個人の開発効率向上のために作成された非公式のサードパーティ製補助ツールです。株式会社オプロ（OPRO Inc.）および「カミレス (Kamiless)」公式とは一切関係ありません。</p>
+    <p><b>データの安全性（100% ローカル動作）</b><br>本ツールに入力またはインポートされた JSON データ、Salesforce 関連データは、すべてお客様のブラウザ内（クライアントサイド）でのみ処理されます。外部のサーバーへデータを送信・蓄積することは一切ありませんので、機密情報も安心してご利用いただけます。</p>
+    <p><b>免責事項</b><br>本ツールは無保証で提供されます。本ツールの利用（JSON のエクスポート・インポート等）により生じたデータ破損、システム不具合、その他の損害について、開発者は一切の責任を負いません。<br><span style="color:#b91c1c;">※重要な環境へインポートする前に、必ず公式側でバックアップ（エクスポート）を取得してください。</span></p>
+    <div style="text-align:center;margin-top:20px;">
+      <button onclick="document.getElementById('disclaimer').remove()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:10px 32px;font-size:14px;cursor:pointer;">承知しました</button>
+    </div>
+  </div>
+</div>
 <div id="app">
   <div id="toolbar">
     <label class="btn">JSON読込<input id="file" type="file" accept=".json" hidden></label>
@@ -70,6 +87,16 @@
     <span id="imgsize">画像: -</span>
     <button id="imgDelete" title="背景画像を削除（image=null・カミレス標準・容量最小・導入OK・環境で再添付）">背景画像を削除</button>
     <button id="imgPlaceholder" title="背景画像を極小1x1画像に置換（容量削減・寸法/id保持）">→占位1x1</button>
+    <label class="btn" title="背景画像をアップロード/差し替え">画像UP<input id="imgUpload" type="file" accept="image/*" hidden></label>
+    <span class="sep"></span>
+    <input type="color" id="detColor" value="#c8f0f0" title="自動枠生成の対象色">
+    <button id="pick" title="スポイト：背景をクリックして色を取得">スポイト</button>
+    <label class="cb">容差<input id="tol" type="number" value="60" min="0" max="300"></label>
+    <button id="region" title="自動枠生成の対象範囲をドラッグ指定（未指定なら全体。再クリックで解除）">範囲指定</button>
+    <button id="autobox" title="対象色の領域を入力欄として一括生成">自動枠生成</button>
+    <span class="sep"></span>
+    <label class="cb"><input type="checkbox" id="snapLine">罫線スナップ</label>
+    <label class="cb">検出%<input id="lineRatio" type="number" value="45" min="5" max="95"></label>
     <span class="sep"></span>
     <button id="zoomout">－</button><button id="zoomin">＋</button>
     <span class="info" id="info">JSONを読み込んでください</span>
@@ -129,7 +156,7 @@ $('file').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)re
   J=JSON.parse(await f.text());allFP.clear();allTF.clear();allSN.clear();tplFP=tplTF=tplSN=null;_c={fp:0,tf:0,sn:0};
   for(const fl of J.form_layouts)for(const p of fl.form_parts){allFP.add(p.id);if(!tplFP)tplFP=p;}
   for(const s of J.target_field_sections){allSN.add(s.id);if(!tplSN)tplSN=s;for(const t of s.target_fields){allTF.add(t.id);if(!tplTF)tplTF=t;}}
-  page=0;sel.clear();chain={sec:null,tf:null,fp:null};tab='fp';collapsed.clear();past=[snap()];future=[];renderAll();updUndo();});
+  page=0;sel.clear();chain={sec:null,tf:null,fp:null};tab='fp';collapsed.clear();lineCache={};past=[snap()];future=[];renderAll();updUndo();});
 $('export').onclick=()=>{if(!J)return;const blob=new Blob([JSON.stringify(J)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(J.name||'export')+'_修正済.json';a.click();};
 
 // ---------- image size / delete (⑤) ----------
@@ -139,6 +166,44 @@ function updImgSize(){if(!J){$('imgsize').textContent='画像: -';return;}const 
 $('imgDelete').onclick=()=>{if(!J)return;if(L().image===null){alert('既に画像なしです。');return;}if(!confirm('このページの背景画像を削除します（image=null・カミレス標準の削除）。容量が大きく下がり導入OK。環境で再添付してください。'))return;L().image=null;commit();renderPage();};
 $('imgPlaceholder').onclick=()=>{if(!J||!L().image){alert('このページに画像がありません。');return;}L().image.data=PLACEHOLDER;commit();renderPage();alert('背景画像を極小1x1画像に置換しました（純base64・寸法/id保持）。');};
 
+// ===== v8: 画像アップロード / 罫線検出+スナップ / 色から自動枠生成 / スポイト =====
+let lineCache={};
+$('imgUpload').onchange=e=>{const f=e.target.files[0];if(!f||!J)return;const rd=new FileReader();
+  rd.onload=()=>{const im=new Image();im.onload=()=>{const b64=String(rd.result).split(',')[1];
+    if(L().image){L().image.data=b64;L().image.width=im.naturalWidth;L().image.height=im.naturalHeight;}
+    else{L().image={data:b64,width:im.naturalWidth,height:im.naturalHeight,dpi:96,id:'',path_on_client:f.name,title:f.name};}
+    lineCache[page]=null;commit();renderPage();};im.src=String(rd.result);};
+  rd.readAsDataURL(f);e.target.value='';};
+function imgData(){const bg=$('bg');if(!bg.complete||!bg.naturalWidth)return null;const W=bg.naturalWidth,H=bg.naturalHeight;
+  const cv=document.createElement('canvas');cv.width=W;cv.height=H;const ctx=cv.getContext('2d');ctx.drawImage(bg,0,0);
+  try{return{W,H,data:ctx.getImageData(0,0,W,H).data};}catch(err){return null;}}
+function clusterIdx(idx){const o=[];for(const v of idx){const last=o[o.length-1];if(last&&v-last.at<=3){last.sum+=v;last.n++;last.at=v;}else o.push({sum:v,n:1,at:v});}return o.map(c=>Math.round(c.sum/c.n));}
+function detectLines(){if(lineCache[page])return lineCache[page];const im=L().image;if(!im||!im.data)return{vx:[],hy:[]};
+  const g=imgData();if(!g)return{vx:[],hy:[]};const{W,H,data}=g;const rowD=new Int32Array(H),colD=new Int32Array(W);
+  for(let y=0;y<H;y++){const o=y*W*4;for(let x=0;x<W;x++){const i=o+x*4;if((data[i]+data[i+1]+data[i+2])/3<128){rowD[y]++;colD[x]++;}}}
+  const r=(+$('lineRatio').value||45)/100,hy=[],vx=[];for(let y=0;y<H;y++)if(rowD[y]>W*r)hy.push(y);for(let x=0;x<W;x++)if(colD[x]>H*r)vx.push(x);
+  const res={vx:clusterIdx(vx),hy:clusterIdx(hy)};lineCache[page]=res;return res;}
+$('lineRatio').onchange=()=>{lineCache[page]=null;};
+function hex2rgb(h){h=h.replace('#','');return[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+function rgb2hex(r,g,b){return'#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');}
+$('autobox').onclick=()=>{if(!J)return;const g=imgData();if(!g){alert('背景画像がありません（「画像UP」で読み込んでください）。');return;}
+  const{W,H,data}=g,tc=hex2rgb($('detColor').value),tol=+$('tol').value||60;
+  const reg=autoRegion;const mask=new Uint8Array(W*H);for(let p=0;p<W*H;p++){if(reg){const px=p%W,py=(p/W)|0;if(px<reg.x0||px>reg.x1||py<reg.y0||py>reg.y1)continue;}const i=p*4;if(Math.abs(data[i]-tc[0])+Math.abs(data[i+1]-tc[1])+Math.abs(data[i+2]-tc[2])<tol)mask[p]=1;}
+  const comp=new Int32Array(W*H),st=[];let blocks=[],cid=0;
+  for(let p=0;p<W*H;p++){if(mask[p]&&!comp[p]){cid++;st.length=0;st.push(p);comp[p]=cid;let minx=p%W,maxx=minx,miny=(p/W)|0,maxy=miny,cnt=0;
+    while(st.length){const k=st.pop(),cx=k%W,cy=(k/W)|0;cnt++;if(cx<minx)minx=cx;if(cx>maxx)maxx=cx;if(cy<miny)miny=cy;if(cy>maxy)maxy=cy;
+      const nbs=[k-1,k+1,k-W,k+W];for(const nk of nbs){if(nk<0||nk>=W*H||comp[nk]||!mask[nk])continue;if(nk===k-1&&cx===0)continue;if(nk===k+1&&cx===W-1)continue;comp[nk]=cid;st.push(nk);}}
+    const w=maxx-minx+1,h=maxy-miny+1;if(w>=22&&h>=16&&cnt>=150)blocks.push([minx,miny,w,h]);}}
+  if(!blocks.length){alert('対象色の領域が見つかりません。色や容差を調整してください。');return;}
+  if(!confirm(blocks.length+' 個の領域を入力欄として生成します。\n対象範囲: '+(autoRegion?'指定範囲内':'全体')+'\nよろしいですか？\n（罫線の無い縦長セルは1本の帯として検出されます。必要なら後で分割してください）'))return;
+  blocks.sort((a,b)=>a[1]-b[1]||a[0]-b[0]);const sec=chain.sec||pageSecs()[0]||newSectionObj();
+  blocks.forEach(([x,y,w,h])=>{const nt=newTfIn(sec);const np=clone(tplFP);np.id=mint('fp',allFP);np.name='FP-AB'+_c.fp;np.part_name=nt.field_label;np.type='text';np.target_field=nt.id;np.x=x+2;np.y=y+2;np.width=Math.max(8,w-4);np.height=Math.max(8,h-4);np.part_order=1;L().form_parts.push(np);});
+  commit();renderAll();};
+let picking=false,regionMode=false,autoRegion=null;
+$('region').onclick=()=>{if(!J)return;if(autoRegion){autoRegion=null;regionMode=false;$('region').textContent='範囲指定';drawParts();return;}regionMode=true;$('region').textContent='ドラッグで範囲…';};
+$('pick').onclick=()=>{if(!J)return;picking=!picking;$('pick').textContent=picking?'クリックで取得…':'スポイト';};
+function pickAt(px,py){const g=imgData();if(!g)return;if(px<0||py<0||px>=g.W||py>=g.H)return;const i=(py*g.W+px)*4;$('detColor').value=rgb2hex(g.data[i],g.data[i+1],g.data[i+2]);}
+
 // ---------- render ----------
 function renderAll(){renderPages();renderPage();renderTree();renderPanel();updInfo();}
 function updInfo(){if(!J){$('info').textContent='—';return;}$('info').textContent=`${J.name||''} | P${page+1}/${J.form_layouts.length} | 枠 ${L().form_parts.length} | 選択 ${sel.size}`;}
@@ -146,7 +211,9 @@ function renderPages(){const c=$('pages');c.innerHTML='';J.form_layouts.forEach(
 function renderPage(){if(!J)return;const fl=L(),img=$('bg'),svg=$('svg');const W=fl.image?.width||1607,H=fl.image?.height||2273;
   img.src=fl.image?.data?imgSrc(fl.image.data):'';$('stage').style.width=(W*scale)+'px';svg.setAttribute('viewBox',`0 0 ${W} ${H}`);drawParts();updImgSize();}
 function drawParts(){if(!J)return;const fl=L(),svg=$('svg');svg.innerHTML='';fl.form_parts.forEach((p,i)=>{if(p.width<=0||p.height<=0)return;
-  const r=document.createElementNS(SVGNS,'rect');r.setAttribute('class','part'+(sel.has(p)?' sel':''));r.setAttribute('x',p.x);r.setAttribute('y',p.y);r.setAttribute('width',p.width);r.setAttribute('height',p.height);r.dataset.i=i;svg.appendChild(r);});drawBBox();}
+  const r=document.createElementNS(SVGNS,'rect');r.setAttribute('class','part'+(sel.has(p)?' sel':''));r.setAttribute('x',p.x);r.setAttribute('y',p.y);r.setAttribute('width',p.width);r.setAttribute('height',p.height);r.dataset.i=i;svg.appendChild(r);});
+  if(autoRegion){const rr=document.createElementNS(SVGNS,'rect');rr.setAttribute('class','region');rr.setAttribute('x',autoRegion.x0);rr.setAttribute('y',autoRegion.y0);rr.setAttribute('width',autoRegion.x1-autoRegion.x0);rr.setAttribute('height',autoRegion.y1-autoRegion.y0);svg.appendChild(rr);}
+  drawBBox();}
 function bboxOf(set){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;set.forEach(p=>{x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x+p.width);y1=Math.max(y1,p.y+p.height);});return{x0,y0,x1,y1};}
 function drawBBox(){const svg=$('svg');svg.querySelectorAll('.bbox,.handle').forEach(e=>e.remove());if(sel.size===0)return;const b=bboxOf(sel);
   const bb=document.createElementNS(SVGNS,'rect');bb.setAttribute('class','bbox');bb.setAttribute('x',b.x0);bb.setAttribute('y',b.y0);bb.setAttribute('width',b.x1-b.x0);bb.setAttribute('height',b.y1-b.y0);svg.appendChild(bb);
@@ -282,6 +349,8 @@ $('renum').onclick=()=>{if(!J)return;const posTf=tf=>{const f=fpsOfTf(tf.id);if(
 function svgPt(evt){const svg=$('svg');const pt=svg.createSVGPoint();pt.x=evt.clientX;pt.y=evt.clientY;return pt.matrixTransform(svg.getScreenCTM().inverse());}
 let drag=null;
 $('svg').addEventListener('mousedown',e=>{if(!J)return;const fl=L();const p0=svgPt(e);const t=e.target;
+  if(picking){pickAt(p0.x|0,p0.y|0);picking=false;$('pick').textContent='スポイト';return;}
+  if(regionMode){drag={mode:'region',start:p0};return;}
   if(t.classList.contains('handle')){drag={mode:'resize',k:t.dataset.k,start:p0,orig:[...sel].map(p=>({p,x:p.x,y:p.y,w:p.width,h:p.height})),bb:bboxOf(sel)};return;}
   if(t.classList.contains('part')){const p=fl.form_parts[+t.dataset.i];
     if(e.ctrlKey||e.shiftKey){sel.has(p)?sel.delete(p):sel.add(p);}else if(!sel.has(p)){sel=new Set([p]);}
@@ -293,18 +362,23 @@ window.addEventListener('mousemove',e=>{if(!drag)return;const p=svgPt(e);let dx=
     L().form_parts.forEach(o=>{if(sel.has(o)||o.width<=0)return;const ox=[o.x,o.x+o.width/2,o.x+o.width],oy=[o.y,o.y+o.height/2,o.y+o.height];
       sX.forEach(se=>ox.forEach(oe=>{const d=oe-se;if(Math.abs(d)<SNAP&&(!bx||Math.abs(d)<Math.abs(bx.d)))bx={d,line:oe};}));
       sY.forEach(se=>oy.forEach(oe=>{const d=oe-se;if(Math.abs(d)<SNAP&&(!by||Math.abs(d)<Math.abs(by.d)))by={d,line:oe};}));});
+    if($('snapLine').checked){const ln=detectLines();
+      sX.forEach(se=>ln.vx.forEach(oe=>{const d=oe-se;if(Math.abs(d)<SNAP&&(!bx||Math.abs(d)<Math.abs(bx.d)))bx={d,line:oe};}));
+      sY.forEach(se=>ln.hy.forEach(oe=>{const d=oe-se;if(Math.abs(d)<SNAP&&(!by||Math.abs(d)<Math.abs(by.d)))by={d,line:oe};}));}
     if(bx){dx+=bx.d;gV(bx.line);}if(by){dy+=by.d;gH(by.line);}
     drag.orig.forEach(o=>{o.p.x=Math.round(o.x+dx);o.p.y=Math.round(o.y+dy);});drawParts();
   } else if(drag.mode==='resize'){const b=drag.bb;const W=b.x1-b.x0,H=b.y1-b.y0;let nx0=b.x0,ny0=b.y0,nx1=b.x1,ny1=b.y1;
     if(drag.k.includes('w'))nx0=b.x0+dx;if(drag.k.includes('e'))nx1=b.x1+dx;if(drag.k.includes('n'))ny0=b.y0+dy;if(drag.k.includes('s'))ny1=b.y1+dy;
     const sx=(nx1-nx0)/W||1,sy=(ny1-ny0)/H||1;drag.orig.forEach(o=>{o.p.x=Math.round(nx0+(o.x-b.x0)*sx);o.p.y=Math.round(ny0+(o.y-b.y0)*sy);o.p.width=Math.max(4,Math.round(o.w*sx));o.p.height=Math.max(4,Math.round(o.h*sy));});drawParts();
-  } else if(drag.mode==='marquee'){svg.querySelector('.marquee')?.remove();const m=document.createElementNS(SVGNS,'rect');m.setAttribute('class','marquee');m.setAttribute('x',Math.min(p.x,drag.start.x));m.setAttribute('y',Math.min(p.y,drag.start.y));m.setAttribute('width',Math.abs(dx));m.setAttribute('height',Math.abs(dy));svg.appendChild(m);}});
+  } else if(drag.mode==='marquee'){svg.querySelector('.marquee')?.remove();const m=document.createElementNS(SVGNS,'rect');m.setAttribute('class','marquee');m.setAttribute('x',Math.min(p.x,drag.start.x));m.setAttribute('y',Math.min(p.y,drag.start.y));m.setAttribute('width',Math.abs(dx));m.setAttribute('height',Math.abs(dy));svg.appendChild(m);}
+  else if(drag.mode==='region'){svg.querySelector('.regionprev')?.remove();const m=document.createElementNS(SVGNS,'rect');m.setAttribute('class','region regionprev');m.setAttribute('x',Math.min(p.x,drag.start.x));m.setAttribute('y',Math.min(p.y,drag.start.y));m.setAttribute('width',Math.abs(dx));m.setAttribute('height',Math.abs(dy));svg.appendChild(m);}});
 function gV(x){const H=L().image?.height||2273;const l=document.createElementNS(SVGNS,'line');l.setAttribute('class','guide');l.setAttribute('x1',x);l.setAttribute('y1',0);l.setAttribute('x2',x);l.setAttribute('y2',H);$('svg').appendChild(l);}
 function gH(y){const W=L().image?.width||1607;const l=document.createElementNS(SVGNS,'line');l.setAttribute('class','guide');l.setAttribute('x1',0);l.setAttribute('y1',y);l.setAttribute('x2',W);l.setAttribute('y2',y);$('svg').appendChild(l);}
 window.addEventListener('mouseup',e=>{if(!drag)return;const mode=drag.mode;
   if(mode==='marquee'){const p=svgPt(e);const x0=Math.min(p.x,drag.start.x),y0=Math.min(p.y,drag.start.y),x1=Math.max(p.x,drag.start.x),y1=Math.max(p.y,drag.start.y);
     L().form_parts.forEach(pp=>{if(pp.width>0&&pp.x>=x0&&pp.y>=y0&&pp.x+pp.width<=x1&&pp.y+pp.height<=y1)sel.add(pp);});syncChainFromSel();}
-  $('svg').querySelectorAll('.guide').forEach(g=>g.remove());const moved=(mode==='move'||mode==='resize');drag=null;drawParts();renderTree();renderPanel();updInfo();if(moved)commit();});
+  if(mode==='region'){const p=svgPt(e);autoRegion={x0:Math.min(p.x,drag.start.x)|0,y0:Math.min(p.y,drag.start.y)|0,x1:Math.max(p.x,drag.start.x)|0,y1:Math.max(p.y,drag.start.y)|0};if(autoRegion.x1-autoRegion.x0<5||autoRegion.y1-autoRegion.y0<5)autoRegion=null;regionMode=false;$('region').textContent=autoRegion?'範囲✓(クリア)':'範囲指定';}
+  $('svg').querySelectorAll('.guide,.regionprev').forEach(g=>g.remove());const moved=(mode==='move'||mode==='resize');drag=null;drawParts();renderTree();renderPanel();updInfo();if(moved)commit();});
 
 // ---------- create / delete ----------
 function newSectionObj(){const ns=clone(tplSN);ns.id=mint('sn',allSN);ns.name='SN-NEW'+_c.sn;ns.section_label='新規セクション';ns.form_layout_number=page+1;ns.section_number=pageSecs().length+1;ns.target_fields=[];J.target_field_sections.push(ns);return ns;}
@@ -313,7 +387,19 @@ $('newPart').onclick=()=>{if(!J)return;let sec=chain.sec||pageSecs()[0]||newSect
   L().form_parts.push(np);sel=new Set([np]);syncChainFromSel();commit();renderAll();};
 $('newField').onclick=()=>{if(!J)return;let sec=chain.sec||pageSecs()[0]||newSectionObj();const nt=newTfIn(sec);chain={sec,tf:nt,fp:null};setTab('tf');commit();renderTree();renderPanel();};
 $('newSection').onclick=()=>{if(!J)return;const ns=newSectionObj();chain={sec:ns,tf:null,fp:null};setTab('sec');commit();renderTree();renderPanel();};
-$('del').onclick=()=>{if(sel.size===0)return;L().form_parts=L().form_parts.filter(p=>!sel.has(p));sel.clear();chain={sec:null,tf:null,fp:null};commit();renderAll();};
+$('del').onclick=()=>{if(!J)return;
+  if(tab==='sec'&&chain.sec){const sec=chain.sec;const tfn=sec.target_fields.length;const tfids=new Set(sec.target_fields.map(t=>t.id));const fpn=L().form_parts.filter(p=>tfids.has(p.target_field)).length;
+    if(!confirm(`セクション「${sec.section_label||sec.name}」と配下の 項目${tfn}個・入力欄${fpn}個 を削除します。よろしいですか？`))return;
+    L().form_parts=L().form_parts.filter(p=>!tfids.has(p.target_field));
+    J.target_field_sections=J.target_field_sections.filter(s=>s!==sec);
+    pageSecs().forEach((s,i)=>s.section_number=i+1);
+  } else if(tab==='tf'&&chain.tf){const tf=chain.tf,sec=secOfTf(tf.id);const fpn=L().form_parts.filter(p=>p.target_field===tf.id).length;
+    if(!confirm(`対象項目「${tf.field_label}」と 入力欄${fpn}個 を削除します。よろしいですか？`))return;
+    L().form_parts=L().form_parts.filter(p=>p.target_field!==tf.id);
+    if(sec){sec.target_fields=sec.target_fields.filter(t=>t!==tf);renumTf(sec);}
+  } else {if(sel.size===0)return;const tfids=new Set([...sel].map(p=>p.target_field));
+    L().form_parts=L().form_parts.filter(p=>!sel.has(p));tfids.forEach(id=>renumFp(id));}
+  sel.clear();chain={sec:null,tf:null,fp:null};commit();renderAll();};
 
 // ---------- copy / paste (④) ----------
 function doCopy(){if(!J)return;if(tab==='tf'&&chain.tf){clipboard={type:'tf',tf:clone(chain.tf),fps:fpsOfTf(chain.tf.id).map(clone)};}
