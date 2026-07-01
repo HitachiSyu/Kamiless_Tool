@@ -6,8 +6,10 @@
 <style>
   *{box-sizing:border-box;}
   html,body{margin:0;height:100%;font-family:"Meiryo","Segoe UI",sans-serif;font-size:13px;color:#1f2937;}
-  #app{display:grid;grid-template-columns:300px 1fr 300px;grid-template-rows:minmax(44px,auto) 1fr;height:100vh;}
-  #toolbar{grid-column:1/4;display:flex;flex-wrap:wrap;align-items:center;gap:6px;row-gap:4px;padding:5px 10px;background:#1f2937;color:#fff;}
+  #app{--lw:300px;--rw:300px;display:grid;grid-template-columns:var(--lw) 6px 1fr 6px var(--rw);grid-template-rows:minmax(44px,auto) 1fr;height:100vh;}
+  #toolbar{grid-column:1/6;display:flex;flex-wrap:wrap;align-items:center;gap:6px;row-gap:4px;padding:5px 10px;background:#1f2937;color:#fff;}
+  .splitter{background:#e5e7eb;cursor:col-resize;}
+  .splitter:hover,.splitter.dragging{background:#2563eb;}
   #toolbar input[type=color]{width:30px;height:24px;padding:0;border:1px solid #4b5563;border-radius:4px;background:#374151;cursor:pointer;}
   #toolbar input[type=number]{width:46px;padding:3px;border-radius:4px;border:1px solid #4b5563;background:#374151;color:#fff;font-size:12px;}
   #toolbar label.cb{font-size:12px;color:#cbd5e1;display:flex;align-items:center;gap:3px;}
@@ -24,10 +26,15 @@
   .lhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
   .lhead b{font-size:12px;color:#374151;}
   .lhead button{font-size:11px;padding:2px 6px;border:1px solid #d1d5db;background:#fff;border-radius:4px;cursor:pointer;}
-  #center{overflow:auto;background:#e9edf2;position:relative;}
+  #center{overflow:auto;background:#e9edf2;position:relative;min-width:0;}
   #right{border-left:1px solid #e5e7eb;overflow:hidden;display:flex;flex-direction:column;}
-  .pagebtn{display:block;width:100%;text-align:left;border:1px solid #d1d5db;background:#fff;border-radius:5px;padding:5px 8px;margin-bottom:4px;cursor:pointer;}
+  .pagerow{display:flex;gap:3px;margin-bottom:4px;align-items:stretch;}
+  .pagebtn{flex:1;min-width:0;text-align:left;border:1px solid #d1d5db;background:#fff;border-radius:5px;padding:5px 8px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .pagebtn.active{background:#2563eb;color:#fff;border-color:#2563eb;}
+  .pageedit{flex:none;border:1px solid #d1d5db;background:#f9fafb;border-radius:5px;padding:0 8px;cursor:pointer;font-size:12px;color:#374151;}
+  .pageedit:hover{background:#eef2ff;border-color:#2563eb;}
+  .pagerow.dropbefore{box-shadow:0 -3px 0 #f59e0b;}
+  .pagerow.dropafter{box-shadow:0 3px 0 #f59e0b;}
   h4{margin:2px 2px 6px;font-size:12px;color:#6b7280;}
   .row{display:flex;align-items:center;gap:3px;padding:2px 4px;border-radius:4px;cursor:pointer;white-space:nowrap;}
   .row:hover{background:#f3f4f6;}
@@ -124,6 +131,7 @@
     <span class="sep"></span>
     <button id="newPart">＋入力欄</button><button id="newField">＋項目</button><button id="newSection">＋セクション</button>
     <button id="del" title="Delete">削除</button>
+    <button id="cleanOrphans" title="どの項目(target_field)にも属さない枠を全ページから削除（サイズ・位置は条件にしない）">未関連枠を掃除</button>
     <button id="renum" title="位置順に番号を振り直す">番号一括整列</button>
     <span class="sep"></span>
     <span id="imgsize">画像: -</span>
@@ -150,7 +158,9 @@
     </div>
     <div id="treeWrap"><h4>構造（このページ）</h4><div id="tree"></div></div>
   </div>
+  <div class="splitter" id="splitL"></div>
   <div id="center"><div id="stage"><img id="bg"><svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg></div></div>
+  <div class="splitter" id="splitR"></div>
   <div id="right">
     <div id="tabs"><button data-t="sec">セクション</button><button data-t="tf">対象項目</button><button data-t="fp" class="active">入力欄</button></div>
     <div id="panel"><p class="muted">JSONを読み込み、枠やツリーを選択してください</p></div>
@@ -241,7 +251,7 @@ const DEF_TF={checkbox_display_type:'none',do_not_overwrite:false,editable_at_re
 const DEF_FP={accept_business_day_only:false,button_required_confirm:false,character_count:false,character_type:'any',checkbox_type:'label',conversion:'none',file_extension:'jpg,jpeg,bmp,png',font_family:'Meiryo',font_size:'18',form_part_size:12,hand_writing_line_width:5,height:60,letter_truncation:'neverTruncate',line_break_flag:false,line_spacing:10,link_setting:'none',link_use:false,make_input_field_for_confirmation:false,margin_x:0,margin_y:0,max_file_number:1,max_file_size:4,max_length:0,min_length:0,name:'',num_of_lines_in_textarea:3,number_step:'1',part_name:'',part_order:1,payment_service_is_transaction_amount:false,preferred_error_message:'none',preset_date_condition:'ApplicationStartDate',preset_input_type:'text',preset_key_parameter_1:'none',preset_key_parameter_2:'none',preset_key_parameter_3:'none',preset_system_parameter:'none',preset_type:'none',reapply_same_template:false,relation_action_type:'show/hide',relation_key_operation:'equal',rule_agreement_condition:'ScrollAll',save_to_log:'none',spacing:0,string_join:false,text_align_on_canvas:'left',timestamp_format:'yyyyMMdd',timestamp_timing:'start',type:'text',width:300,x:200,y:200};
 const allFP=new Set(),allTF=new Set(),allSN=new Set();
 let _c={fp:0,tf:0,sn:0};
-function mint(kind,pool){const pref=kind==='fp'?'a0G':kind==='tf'?'a0V':'a0T';while(true){_c[kind]++;const base=pref+'Az00000'+String(_c[kind]).padStart(5,'0');const id=sfid(base);if(!pool.has(id)){pool.add(id);return id;}}}
+function mint(kind,pool){const pref=kind==='fp'?'a0G':kind==='tf'?'a0V':kind==='fl'?'a0E':kind==='img'?'068':'a0T';if(_c[kind]==null)_c[kind]=0;while(true){_c[kind]++;const base=pref+'Az00000'+String(_c[kind]).padStart(5,'0');const id=sfid(base);if(!pool.has(id)){pool.add(id);return id;}}}
 
 const L=()=>J.form_layouts[page];
 const pageSecs=()=>J.target_field_sections.filter(s=>(s.form_layout_number||1)===page+1).sort((a,b)=>(a.section_number||0)-(b.section_number||0));
@@ -333,19 +343,25 @@ $('pdfModal').onclick=e=>{if(e.target===$('pdfModal'))closePdf();};
 $('pdfDpi').onchange=()=>{};// dpiはページ確定時に反映（再サムネ不要）
 
 // ===== v11: 別フォームテンプレートから「セクション/項目を選んで」コピー =====
-let R=null,clip=null,refSecChks=[];// R=コピー元JSON（参照のみ）、clip=コピー済み選択
+let R=null,clip=null,refSecChks=[],refPageChks=[];// R=コピー元JSON（参照のみ）、clip=コピー済み選択
 $('refFile').onchange=async e=>{const f=e.target.files[0];if(!f){return;}
   try{R=JSON.parse(await f.text());}catch(err){alert('コピー元のJSONを読み込めません:\n'+err);e.target.value='';return;}
   if(!Array.isArray(R.form_layouts))R.form_layouts=[];if(!Array.isArray(R.target_field_sections))R.target_field_sections=[];
   openRef();e.target.value='';};
-function refUpdCount(){let ns=0,nt=0;refSecChks.forEach(sc=>{if(sc.checked)ns++;else sc._tfChks.forEach(tc=>{if(tc.checked)nt++;});});
-  $('refCount').textContent=(ns||nt)?('セクション'+ns+'個・単独項目'+nt+'個を選択中'):'未選択';}
-function openRef(){if(!R)return;const list=$('refList');list.innerHTML='';refSecChks=[];
+function refUpdCount(){let ns=0,nt=0,np=0;refPageChks.forEach(pc=>{if(pc.checked)np++;});
+  refSecChks.forEach(sc=>{if(sc.disabled)return;if(sc.checked)ns++;else sc._tfChks.forEach(tc=>{if(tc.checked)nt++;});});
+  const t=[];if(np)t.push('ページ丸ごと'+np+'枚');if(ns)t.push('セクション'+ns+'個');if(nt)t.push('単独項目'+nt+'個');
+  $('refCount').textContent=t.length?t.join('・')+'を選択中':'未選択';}
+function openRef(){if(!R)return;const list=$('refList');list.innerHTML='';refSecChks=[];refPageChks=[];
   R.form_layouts.forEach((fl,p)=>{
     const secs=R.target_field_sections.filter(s=>(s.form_layout_number||1)===p+1).slice().sort((a,b)=>(a.section_number||0)-(b.section_number||0));
-    if(!secs.length)return;const parts=Array.isArray(fl.form_parts)?fl.form_parts:[];
+    const parts=Array.isArray(fl.form_parts)?fl.form_parts:[];// v16: セクション0のページ（背景+枠のみ）も飛ばさず表示する
     const pg=document.createElement('div');pg.className='refPg';
-    const ph=document.createElement('div');ph.className='pgh';ph.textContent='ページ'+(p+1)+'（セクション'+secs.length+'）';pg.appendChild(ph);
+    const ph=document.createElement('label');ph.className='pgh';ph.style.cursor='pointer';
+    const pChk=document.createElement('input');pChk.type='checkbox';pChk._page=p;pChk.style.marginRight='6px';
+    ph.appendChild(pChk);ph.appendChild(document.createTextNode((p+1)+'. '+pageName(fl,p)+' を新規ページとして挿入'));
+    const pm=document.createElement('span');pm.className='refSmall';pm.textContent='（背景画像ごと・セクション'+secs.length+'・入力欄'+parts.length+'）';ph.appendChild(pm);
+    pg.appendChild(ph);refPageChks.push(pChk);
     secs.forEach(sec=>{
       const secDiv=document.createElement('div');secDiv.className='refSec';
       const sh=document.createElement('div');sh.className='sh';
@@ -370,36 +386,50 @@ function openRef(){if(!R)return;const list=$('refList');list.innerHTML='';refSec
       sChk.onchange=()=>{const on=sChk.checked;sChk._tfChks.forEach(tc=>{tc.checked=on;tc.disabled=on;});refUpdCount();};
       refSecChks.push(sChk);pg.appendChild(secDiv);
     });
+    pChk.onchange=()=>{const on=pChk.checked;refSecChks.filter(sc=>sc._page===p).forEach(sc=>{if(on){sc.checked=false;sc._tfChks.forEach(tc=>{tc.checked=false;tc.disabled=true;});}else{sc._tfChks.forEach(tc=>{tc.disabled=false;});}sc.disabled=on;});refUpdCount();};
     list.appendChild(pg);
   });
   $('refTitle').textContent='コピー元: '+(R.name||'(無名)');
   refUpdCount();$('refModal').classList.add('show');}
 $('refClose').onclick=()=>$('refModal').classList.remove('show');
 $('refModal').onclick=e=>{if(e.target===$('refModal'))$('refModal').classList.remove('show');};
-// チェック状態から選択を採取（セクション丸ごと or 単独項目）。スケール用に元ページ背景寸法も保持。
-function collectSelection(){const sections=[],looseTfs=[];
-  refSecChks.forEach(sc=>{const sec=sc._sec,p=sc._page,fl=R.form_layouts[p],parts=Array.isArray(fl.form_parts)?fl.form_parts:[],img=fl&&fl.image,bgW=img?img.width:null,bgH=img?img.height:null;
+// ページを丸ごと採取（form_layout メタ＝背景画像ごと ＋ 配下セクション/項目/入力欄）
+function buildWholePage(p){const fl=R.form_layouts[p];const parts=Array.isArray(fl.form_parts)?fl.form_parts:[];
+  const flMeta=clone(fl);delete flMeta.form_parts;// image 等その他フィールドは保全
+  const secs=R.target_field_sections.filter(s=>(s.form_layout_number||1)===p+1).slice().sort((a,b)=>(a.section_number||0)-(b.section_number||0));
+  const used=new Set();
+  const sections=secs.map(sec=>{const tfs=(sec.target_fields||[]).slice().sort((a,b)=>(a.field_number||0)-(b.field_number||0)).map(tf=>{
+      const fps=parts.filter(fp=>fp.target_field===tf.id).sort((a,b)=>(a.part_order||0)-(b.part_order||0));fps.forEach(f=>used.add(f));return{tf:clone(tf),fps:fps.map(clone)};});
+    const secCopy=clone(sec);delete secCopy.target_fields;return{sec:secCopy,tfs};});
+  const orphans=parts.filter(fp=>!used.has(fp)&&fp.width>0).map(clone);
+  return{flMeta,sections,orphans};}
+// チェック状態から選択を採取（ページ丸ごと / セクション丸ごと / 単独項目）。スケール用に元ページ背景寸法も保持。
+function collectSelection(){const sections=[],looseTfs=[],pages=[];const wholePages=new Set();
+  refPageChks.forEach(pc=>{if(pc.checked){wholePages.add(pc._page);pages.push(buildWholePage(pc._page));}});
+  refSecChks.forEach(sc=>{if(wholePages.has(sc._page))return;// ページ丸ごと選択時はその配下は個別採取しない
+    const sec=sc._sec,p=sc._page,fl=R.form_layouts[p],parts=Array.isArray(fl.form_parts)?fl.form_parts:[],img=fl&&fl.image,bgW=img?img.width:null,bgH=img?img.height:null;
     const fpsOf=tf=>parts.filter(fp=>fp.target_field===tf.id).sort((a,b)=>(a.part_order||0)-(b.part_order||0)).map(clone);
     if(sc.checked){
       const tfs=(sec.target_fields||[]).slice().sort((a,b)=>(a.field_number||0)-(b.field_number||0)).map(tf=>({tf:clone(tf),fps:fpsOf(tf)}));
       const secCopy=clone(sec);delete secCopy.target_fields;sections.push({sec:secCopy,tfs,bgW,bgH});
     } else sc._tfChks.forEach(tc=>{if(tc.checked)looseTfs.push({tf:clone(tc._tf),fps:fpsOf(tc._tf),bgW,bgH});});
   });
-  return{sections,looseTfs};}
+  return{sections,looseTfs,pages};}
 $('refCopy').onclick=()=>{const c=collectSelection();
-  if(!c.sections.length&&!c.looseTfs.length){alert('セクションまたは項目を選択してください。');return;}
+  if(!c.sections.length&&!c.looseTfs.length&&!c.pages.length){alert('ページ・セクション・項目のいずれかを選択してください。');return;}
   clip=c;$('refModal').classList.remove('show');
   let nt=c.looseTfs.length,nf=0;c.sections.forEach(S=>{nt+=S.tfs.length;S.tfs.forEach(T=>nf+=T.fps.length);});c.looseTfs.forEach(T=>nf+=T.fps.length);
-  alert('コピーしました：セクション'+c.sections.length+'・項目'+nt+'・入力欄'+nf+'\nメイン側で「貼付」を押してください。');};
+  alert('コピーしました：ページ丸ごと'+c.pages.length+'枚・セクション'+c.sections.length+'・項目'+nt+'・入力欄'+nf+'\nメイン側で「貼付」を押してください。');};
 // 主JSONの現在ページに clip を追加（再採番・座標維持/任意スケール）
 $('pastePage').onclick=()=>{
   if(!J){alert('先にメインのJSONを読み込んでください。');return;}
-  if(!clip||(!clip.sections.length&&!clip.looseTfs.length)){alert('先に「コピー元を開く」で選択してコピーしてください。');return;}
+  if(!clip||(!clip.sections.length&&!clip.looseTfs.length&&!(clip.pages||[]).length)){alert('先に「コピー元を開く」で選択してコピーしてください。');return;}
   const fl=L();if(!Array.isArray(fl.form_parts))fl.form_parts=[];
   const doScale=$('scalePaste').checked&&fl.image&&fl.image.width&&fl.image.height;
   const mkFp=(fp,bgW,bgH)=>{const n=clone(fp);n.id=mint('fp',allFP);n.name='FP-CP'+_c.fp;
     if(doScale&&bgW&&bgH){const sx=fl.image.width/bgW,sy=fl.image.height/bgH;n.x=Math.round(n.x*sx);n.y=Math.round(n.y*sy);n.width=Math.round(n.width*sx);n.height=Math.round(n.height*sy);}return n;};
-  let aSec=0,aTf=0,aFp=0;
+  let aSec=0,aTf=0,aFp=0,aPage=0,jump=-1;
+  // ① セクション/単独項目 → 現在ページに追加（従来どおり）
   clip.sections.forEach(S=>{const ns=clone(S.sec);ns.id=mint('sn',allSN);ns.name='SN-CP'+_c.sn;ns.form_layout_number=page+1;ns.section_number=pageSecs().length+1;ns.target_fields=[];J.target_field_sections.push(ns);aSec++;
     S.tfs.forEach((T,ti)=>{const nt=clone(T.tf);nt.id=mint('tf',allTF);nt.name='TF-CP'+_c.tf;nt.field_number=ti+1;ns.target_fields.push(nt);aTf++;
       T.fps.forEach((fp,fi)=>{const nfp=mkFp(fp,S.bgW,S.bgH);nfp.target_field=nt.id;nfp.part_order=fi+1;fl.form_parts.push(nfp);aFp++;});});});
@@ -408,8 +438,22 @@ $('pastePage').onclick=()=>{
     if(!home){home=newSectionObj();home.section_label='コピーした項目';aSec++;}
     clip.looseTfs.forEach(Lt=>{const nt=clone(Lt.tf);nt.id=mint('tf',allTF);nt.name='TF-CP'+_c.tf;nt.field_number=home.target_fields.length+1;home.target_fields.push(nt);aTf++;
       Lt.fps.forEach((fp,fi)=>{const nfp=mkFp(fp,Lt.bgW,Lt.bgH);nfp.target_field=nt.id;nfp.part_order=fi+1;fl.form_parts.push(nfp);aFp++;});});}
+  // ② ページ丸ごと → 新規 form_layout として末尾に挿入（背景画像ごと・スケールしない）
+  if((clip.pages||[]).length){
+    const flPool=new Set(J.form_layouts.map(f=>f.id).filter(Boolean));
+    const imgPool=new Set(J.form_layouts.map(f=>f.image&&f.image.id).filter(Boolean));
+    clip.pages.forEach(P=>{const newNum=J.form_layouts.length+1;
+      const nfl=clone(P.flMeta);nfl.id=mint('fl',flPool);nfl.layout_number=newNum;nfl.form_parts=[];
+      if(nfl.image&&nfl.image.id)nfl.image.id=mint('img',imgPool);
+      J.form_layouts.push(nfl);if(jump<0)jump=J.form_layouts.length-1;aPage++;
+      P.sections.forEach((S,si)=>{const ns=clone(S.sec);ns.id=mint('sn',allSN);ns.name='SN-CP'+_c.sn;ns.form_layout_number=newNum;ns.section_number=si+1;ns.target_fields=[];J.target_field_sections.push(ns);aSec++;
+        S.tfs.forEach((T,ti)=>{const nt=clone(T.tf);nt.id=mint('tf',allTF);nt.name='TF-CP'+_c.tf;nt.field_number=ti+1;ns.target_fields.push(nt);aTf++;
+          T.fps.forEach((fp,fi)=>{const nf=clone(fp);nf.id=mint('fp',allFP);nf.name='FP-CP'+_c.fp;nf.target_field=nt.id;nf.part_order=fi+1;nfl.form_parts.push(nf);aFp++;});});});
+      (P.orphans||[]).forEach(fp=>{const nf=clone(fp);nf.id=mint('fp',allFP);nf.name='FP-CP'+_c.fp;nf.target_field='';nfl.form_parts.push(nf);});
+    });}
+  if(jump>=0)page=jump;// 挿入した新ページを表示
   commit();renderAll();
-  alert('貼り付け完了：セクション'+aSec+'・項目'+aTf+'・入力欄'+aFp+'（ページ'+(page+1)+'）'+(doScale?'／座標スケール適用':'／座標そのまま'));};
+  alert('貼り付け完了：新規ページ'+aPage+'枚・セクション'+aSec+'・項目'+aTf+'・入力欄'+aFp+(aPage?'（新ページを表示中）':'（ページ'+(page+1)+'）')+(doScale?'／座標スケール適用':''));};
 function imgData(){const bg=$('bg');if(!bg.complete||!bg.naturalWidth)return null;const W=bg.naturalWidth,H=bg.naturalHeight;
   const cv=document.createElement('canvas');cv.width=W;cv.height=H;const ctx=cv.getContext('2d');ctx.drawImage(bg,0,0);
   try{return{W,H,data:ctx.getImageData(0,0,W,H).data};}catch(err){return null;}}
@@ -442,8 +486,47 @@ function pickAt(px,py){const g=imgData();if(!g)return;if(px<0||py<0||px>=g.W||py
 
 // ---------- render ----------
 function renderAll(){renderPages();renderPage();renderTree();renderPanel();updInfo();}
-function updInfo(){if(!J){$('info').textContent='—';return;}$('info').textContent=`${J.name||''} | P${page+1}/${J.form_layouts.length} | 枠 ${L().form_parts.length} | 選択 ${sel.size}`;}
-function renderPages(){const c=$('pages');c.innerHTML='';J.form_layouts.forEach((fl,i)=>{const b=document.createElement('button');b.className='pagebtn'+(i===page?' active':'');b.textContent=`page${i+1} (${fl.form_parts.length})`;b.onclick=()=>{page=i;sel.clear();chain={sec:null,tf:null,fp:null};renderAll();};c.appendChild(b);});}
+function updInfo(){if(!J){$('info').textContent='—';return;}$('info').textContent=`${J.name||''} | ${pageName(L(),page)}（P${page+1}/${J.form_layouts.length}） | 枠 ${L().form_parts.length} | 選択 ${sel.size}`;}
+// ページ名 = layout_title（= name = form_template_name）。無ければ「ページN」
+function pageName(fl,i){return (fl&&(fl.layout_title||fl.name||fl.form_template_name))||('ページ'+(i+1));}
+// 改名時は一致していた3フィールドをまとめて更新（カミレスでは同値のため）
+function renamePage(fl,i){const cur=pageName(fl,i);const v=prompt('ページ名を変更',cur);if(v==null)return;const nv=v.trim();if(!nv||nv===cur)return;
+  ['layout_title','name','form_template_name'].forEach(k=>{if(k in fl)fl[k]=nv;});commit();renderPages();updInfo();}
+function renderPages(){const c=$('pages');c.innerHTML='';J.form_layouts.forEach((fl,i)=>{
+  const row=document.createElement('div');row.className='pagerow';row._idx=i;
+  const b=document.createElement('button');b.className='pagebtn'+(i===page?' active':'');
+  const nm=pageName(fl,i);b.textContent=(i+1)+'. '+nm+' ('+(fl.form_parts?fl.form_parts.length:0)+')';b.title=nm+'（ドラッグで並べ替え）';
+  b.onmousedown=e=>{if(e.button!==0)return;pageDown={idx:i,x:e.clientX,y:e.clientY};};// クリック=切替／ドラッグ=並べ替え（mouseupで判定）
+  const ed=document.createElement('button');ed.className='pageedit';ed.textContent='✎';ed.title='ページ名を変更';
+  ed.onmousedown=e=>e.stopPropagation();ed.onclick=e=>{e.stopPropagation();renamePage(fl,i);};
+  row.appendChild(b);row.appendChild(ed);c.appendChild(row);});}
+// ---------- page reorder (drag) ----------
+let pageDown=null,pageDrag=null;
+function clearPageDrop(){$('pages').querySelectorAll('.pagerow.dropbefore,.pagerow.dropafter').forEach(r=>r.classList.remove('dropbefore','dropafter'));}
+document.addEventListener('mousemove',e=>{
+  if(pageDown&&!pageDrag){if(Math.abs(e.clientX-pageDown.x)+Math.abs(e.clientY-pageDown.y)>4){pageDrag=pageDown;document.body.style.cursor='grabbing';}}
+  if(!pageDrag)return;
+  clearPageDrop();const el=document.elementFromPoint(e.clientX,e.clientY);const row=el&&el.closest&&el.closest('.pagerow');
+  if(row&&row._idx!=null&&row._idx!==pageDrag.idx){const r=row.getBoundingClientRect();const after=e.clientY>r.top+r.height/2;
+    row.classList.add(after?'dropafter':'dropbefore');pageDrag.toIdx=after?row._idx+1:row._idx;}
+  else pageDrag.toIdx=null;
+});
+document.addEventListener('mouseup',()=>{
+  if(pageDrag){document.body.style.cursor='';clearPageDrop();const from=pageDrag.idx,to=pageDrag.toIdx;pageDrag=null;pageDown=null;if(to!=null)reorderPages(from,to);return;}
+  if(pageDown){const idx=pageDown.idx;pageDown=null;if(idx!==page){page=idx;sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;renderAll();}}
+});
+// 挿入式にページを並べ替え。section.form_layout_number も「旧号→新号」で追随させる（位置＝layout_number＝form_layout_number を維持）
+function reorderPages(fromIdx,toIdx){const arr=J.form_layouts;if(fromIdx<0||fromIdx>=arr.length)return;
+  const curFl=arr[page];
+  arr.forEach((fl,i)=>fl.__old=i+1);// 旧ページ番号（＝現在の位置。sectionが参照している値）
+  const [m]=arr.splice(fromIdx,1);
+  let t=toIdx>fromIdx?toIdx-1:toIdx;t=Math.max(0,Math.min(arr.length,t));
+  arr.splice(t,0,m);
+  const map={};arr.forEach((fl,i)=>{map[fl.__old]=i+1;});// 旧号→新号
+  J.target_field_sections.forEach(s=>{const o=s.form_layout_number||1;if(map[o]!=null)s.form_layout_number=map[o];});
+  arr.forEach((fl,i)=>{fl.layout_number=i+1;delete fl.__old;});
+  page=arr.indexOf(curFl);if(page<0)page=Math.max(0,Math.min(arr.length-1,t));
+  sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;commit();renderAll();}
 function renderPage(){if(!J)return;const fl=L(),img=$('bg'),svg=$('svg');const W=fl.image?.width||1607,H=fl.image?.height||2273;
   img.src=fl.image?.data?imgSrc(fl.image.data):'';$('stage').style.width=(W*scale)+'px';svg.setAttribute('viewBox',`0 0 ${W} ${H}`);drawParts();updImgSize();}
 function drawParts(){if(!J)return;const fl=L(),svg=$('svg');svg.innerHTML='';fl.form_parts.forEach((p,i)=>{if(p.width<=0||p.height<=0)return;
@@ -458,10 +541,24 @@ function drawBBox(){const svg=$('svg');svg.querySelectorAll('.bbox,.handle').for
 // ---------- tree ----------
 let selRowEl=null;
 function renderTree(scrollSel){const c=$('tree');c.innerHTML='';selRowEl=null;if(!J)return;const shown=new Set();
-  pageSecs().forEach(sec=>{
+  // v17: 「このページに物理的に枠があるセクション」を基準に構築。
+  // section.form_layout_number は枠の物理ページと必ずしも一致しない（1つのセクションが複数ページに跨がる）ため、
+  // 枠(form_part)の所在から逆引きする。加えて form_layout_number 上このページに属する（空の）セクションも表示。
+  const parts=L().form_parts||[];const tfIdsHere=new Set(parts.map(p=>p.target_field));
+  const allBoxTf=new Set();J.form_layouts.forEach(fl=>(fl.form_parts||[]).forEach(p=>allBoxTf.add(p.target_field)));// どこかに枠がある項目
+  // 表示条件：このページに枠があるセクション、または（form_layout_number 上このページに属し）どこにも枠が無い空セクション
+  const secList=J.target_field_sections.filter(sec=>{const nominal=(sec.form_layout_number||1)===page+1;
+      const hasHere=(sec.target_fields||[]).some(tf=>tfIdsHere.has(tf.id));
+      const emptyEverywhere=(sec.target_fields||[]).every(tf=>!allBoxTf.has(tf.id));
+      return hasHere||(nominal&&emptyEverywhere);})
+    .slice().sort((a,b)=>((a.form_layout_number||0)-(b.form_layout_number||0))||((a.section_number||0)-(b.section_number||0)));
+  secList.forEach(sec=>{
+    const nominal=(sec.form_layout_number||1)===page+1;
+    const tfs=tfsOf(sec).filter(tf=>tfIdsHere.has(tf.id)||(nominal&&!allBoxTf.has(tf.id)));// 本ページに枠がある項目＋（自ページの）どこにも枠が無い空項目
+    if(!tfs.length)return;
     const sd=mkRow('sec',sec,sec.section_number,sec.section_label||sec.name,true);c.appendChild(sd);
     const sc=document.createElement('div');sc.className='children';const scol=collapsed.has(key('sec',sec));if(scol)sc.style.display='none';sd.querySelector('.tw').textContent=scol?'▸':'▾';c.appendChild(sc);
-    tfsOf(sec).forEach(tf=>{
+    tfs.forEach(tf=>{
       const td=mkRow('tf',tf,tf.field_number,tf.field_label,true);sc.appendChild(td);
       const tc=document.createElement('div');tc.className='children';const tcol=collapsed.has(key('tf',tf));if(tcol)tc.style.display='none';td.querySelector('.tw').textContent=tcol?'▸':'▾';sc.appendChild(tc);
       fpsOfTf(tf.id).forEach(fp=>{shown.add(fp);tc.appendChild(mkRow('fp',fp,fp.part_order,fp.part_name||'(無名)',false));});
@@ -649,6 +746,17 @@ $('newPart').onclick=()=>{if(!J)return;let sec=chain.sec||pageSecs()[0]||newSect
   L().form_parts.push(np);sel=new Set([np]);syncChainFromSel();commit();renderAll();};
 $('newField').onclick=()=>{if(!J)return;let sec=chain.sec||pageSecs()[0]||newSectionObj();const nt=newTfIn(sec);chain={sec,tf:nt,fp:null};setTab('tf');commit();renderTree();renderPanel();};
 $('newSection').onclick=()=>{if(!J)return;const ns=newSectionObj();chain={sec:ns,tf:null,fp:null};setTab('sec');commit();renderTree();renderPanel();};
+// v18: どの項目(target_field)にも属さない枠を全ページから削除（サイズ・位置は無関係）
+$('cleanOrphans').onclick=()=>{if(!J)return;
+  const ids=new Set();J.target_field_sections.forEach(s=>(s.target_fields||[]).forEach(t=>ids.add(t.id)));
+  const byPage={};let total=0;
+  J.form_layouts.forEach((fl,pi)=>{(fl.form_parts||[]).forEach(fp=>{if(!ids.has(fp.target_field)){byPage[pi+1]=(byPage[pi+1]||0)+1;total++;}});});
+  if(!total){alert('どの項目にも属さない枠はありませんでした。');return;}
+  const detail=Object.keys(byPage).map(p=>'P'+p+':'+byPage[p]).join(' / ');
+  if(!confirm('どの項目(target_field)にも属さない枠 '+total+' 個を全ページから削除します。\n（'+detail+'）\n※サイズ・位置は条件にしません（項目に属する枠は大きさ0でも残ります）。\nよろしいですか？'))return;
+  J.form_layouts.forEach(fl=>{if(Array.isArray(fl.form_parts))fl.form_parts=fl.form_parts.filter(fp=>ids.has(fp.target_field));});
+  sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;commit();renderAll();
+  alert(total+' 個の未関連枠を削除しました。');};
 $('del').onclick=()=>{if(!J)return;
   if(treeMultiKind==='sec'&&treeMulti.size){const secs=[...treeMulti];const ids=new Set();let tfn=0;secs.forEach(s=>{(s.target_fields||[]).forEach(t=>ids.add(t.id));tfn+=(s.target_fields||[]).length;});
     const fpn=L().form_parts.filter(p=>ids.has(p.target_field)).length;
@@ -705,6 +813,15 @@ window.addEventListener('keydown',e=>{if(!J)return;const k=e.key.toLowerCase();c
   if((e.ctrlKey||e.metaKey)&&k==='v'){if(!inInput){e.preventDefault();doPaste(e.shiftKey);}return;}
   if((e.ctrlKey||e.metaKey)&&k==='a'){if(!inInput){e.preventDefault();sel=new Set(L().form_parts.filter(p=>p.width>0&&p.height>0));treeMulti.clear();treeMultiKind=null;tab='fp';chain={sec:null,tf:null,fp:null};syncChainFromSel();drawParts();renderTree();renderPanel();updInfo();}return;}
   if(k==='delete'&&!inInput){$('del').click();}});
+// v19: 左右パネルの幅をドラッグで調整
+function initSplit(id,varName,side){const el=$(id);if(!el)return;
+  el.addEventListener('mousedown',e=>{e.preventDefault();const app=$('app'),startX=e.clientX;
+    const cur=parseInt(getComputedStyle(app).getPropertyValue(varName))||300;el.classList.add('dragging');document.body.style.cursor='col-resize';
+    const mv=ev=>{const d=ev.clientX-startX;let w=side==='L'?cur+d:cur-d;w=Math.max(150,Math.min(760,w));app.style.setProperty(varName,w+'px');};
+    const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);el.classList.remove('dragging');document.body.style.cursor='';};
+    document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);});
+  el.addEventListener('dblclick',()=>{$('app').style.setProperty(varName,'300px');});}// ダブルクリックで既定幅に戻す
+initSplit('splitL','--lw','L');initSplit('splitR','--rw','R');
 </script>
 </body>
 </html>
