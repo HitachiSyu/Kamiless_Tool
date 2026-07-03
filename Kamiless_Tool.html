@@ -22,7 +22,9 @@
   #left{border-right:1px solid #e5e7eb;display:flex;flex-direction:column;overflow:hidden;}
   #pagesWrap{flex:none;border-bottom:1px solid #e5e7eb;padding:6px;max-height:38%;display:flex;flex-direction:column;}
   #pages{overflow:auto;}
-  #treeWrap{flex:1;overflow:auto;padding:6px;position:relative;}
+  #treeWrap{flex:1;display:flex;flex-direction:column;min-height:0;padding:6px;position:relative;}
+  #treeWrap .lhead{flex:none;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid #f3f4f6;}
+  #tree{flex:1;overflow:auto;min-height:0;}
   .lhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
   .lhead b{font-size:12px;color:#374151;}
   .lhead button{font-size:11px;padding:2px 6px;border:1px solid #d1d5db;background:#fff;border-radius:4px;cursor:pointer;}
@@ -153,10 +155,10 @@
   </div>
   <div id="left">
     <div id="pagesWrap">
-      <div class="lhead"><b>ページ</b><button id="togglePages">折りたたみ</button></div>
+      <div class="lhead"><b>ページ</b><span><button id="addPage" title="空白ページを末尾に追加（背景画像は後で「画像/PDF」で設定）">＋ページ</button><button id="togglePages">折りたたみ</button></span></div>
       <div id="pages"></div>
     </div>
-    <div id="treeWrap"><h4>構造（このページ）</h4><div id="tree"></div></div>
+    <div id="treeWrap"><div class="lhead"><b>構造（このページ）</b><button id="treeToggle" title="全セクション・項目をまとめて展開／折りたたみ">全折畳</button></div><div id="tree"></div></div>
   </div>
   <div class="splitter" id="splitL"></div>
   <div id="center"><div id="stage"><img id="bg"><svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg></div></div>
@@ -555,7 +557,7 @@ function renderTree(scrollSel){const c=$('tree');c.innerHTML='';selRowEl=null;if
   secList.forEach(sec=>{
     const nominal=(sec.form_layout_number||1)===page+1;
     const tfs=tfsOf(sec).filter(tf=>tfIdsHere.has(tf.id)||(nominal&&!allBoxTf.has(tf.id)));// 本ページに枠がある項目＋（自ページの）どこにも枠が無い空項目
-    if(!tfs.length)return;
+    if(!tfs.length&&!nominal)return;// v20: 自ページの空セクション（＋セクション直後など）は項目0でも表示する
     const sd=mkRow('sec',sec,sec.section_number,sec.section_label||sec.name,true);c.appendChild(sd);
     const sc=document.createElement('div');sc.className='children';const scol=collapsed.has(key('sec',sec));if(scol)sc.style.display='none';sd.querySelector('.tw').textContent=scol?'▸':'▾';c.appendChild(sc);
     tfs.forEach(tf=>{
@@ -567,6 +569,8 @@ function renderTree(scrollSel){const c=$('tree');c.innerHTML='';selRowEl=null;if
   const orphans=L().form_parts.filter(fp=>!shown.has(fp)&&fp.width>0);
   if(orphans.length){const h=document.createElement('div');h.className='row';h.innerHTML='<span class="tw"></span><span class="muted">(未分類入力欄)</span>';c.appendChild(h);orphans.forEach(fp=>c.appendChild(mkRow('fp',fp,fp.part_order,fp.part_name||'(無名)',false)));}
   if(scrollSel&&selRowEl)selRowEl.scrollIntoView({block:'nearest'});
+  const _ac=J.target_field_sections.length>0&&J.target_field_sections.every(s=>collapsed.has(key('sec',s)));
+  $('treeToggle').textContent=_ac?'全展開':'全折畳';// 次に押したときの動作を表示
 }
 function key(kind,o){return kind+':'+(o.id||o.name);}
 function mkRow(kind,o,num,label,hasChildren){
@@ -606,11 +610,11 @@ document.addEventListener('mousemove',e=>{
   const el=document.elementFromPoint(e.clientX,e.clientY);const row=el&&el.closest&&el.closest('.row');dropTgt=null;
   if(row&&row._node&&row!==treeDrag.row){const tn=row._node;if(canDrop(treeDrag.kind,tn.kind)){dropTgt={row,...tn};row.classList.add(tn.kind===treeDrag.kind?'dropbefore':'dropinto');}}
   // edge auto-scroll
-  const tw=$('treeWrap'),r=tw.getBoundingClientRect();stopAuto();
+  const tw=$('tree'),r=tw.getBoundingClientRect();stopAuto();
   if(e.clientY<r.top+28)startAuto(-10);else if(e.clientY>r.bottom-28)startAuto(10);
 });
 function canDrop(sk,tk){if(sk==='sec')return tk==='sec';return true;}// v10: tf/fpはどの行に落としても所属を解決
-function startAuto(dy){if(autoTimer)return;autoTimer=setInterval(()=>{$('treeWrap').scrollTop+=dy;},16);}
+function startAuto(dy){if(autoTimer)return;autoTimer=setInterval(()=>{$('tree').scrollTop+=dy;},16);}
 function stopAuto(){if(autoTimer){clearInterval(autoTimer);autoTimer=null;}}
 document.addEventListener('mouseup',e=>{
   stopAuto();document.body.style.cursor='';
@@ -741,11 +745,30 @@ window.addEventListener('mouseup',e=>{if(!drag)return;const mode=drag.mode;
 
 // ---------- create / delete ----------
 function newSectionObj(){const ns=clone(tplSN);ns.id=mint('sn',allSN);ns.name='SN-NEW'+_c.sn;ns.section_label='新規セクション';ns.form_layout_number=page+1;ns.section_number=pageSecs().length+1;ns.target_fields=[];J.target_field_sections.push(ns);return ns;}
-$('newPart').onclick=()=>{if(!J)return;let sec=chain.sec||pageSecs()[0]||newSectionObj();const nt=newTfIn(sec);
-  const np=clone(tplFP);np.id=mint('fp',allFP);np.name='FP-NEW'+_c.fp;np.part_name='新規入力欄';np.type='text';np.target_field=nt.id;np.x=200;np.y=200;np.width=300;np.height=60;np.part_order=1;
+// v21: 空白ページを末尾に新規追加（背景なし=image:null。既存 form_layout の他フィールドは保全）
+$('addPage').onclick=()=>{if(!J)return;if(!Array.isArray(J.form_layouts))J.form_layouts=[];
+  const num=J.form_layouts.length+1;
+  const flPool=new Set(J.form_layouts.map(f=>f.id).filter(Boolean));
+  const tpl=J.form_layouts[0];
+  const nfl=tpl?clone(tpl):{deselected_part_stroke_style:'#9AD09B',error_part_stroke_style:'#EA001E',line_width:3,selected_part_stroke_style:'#0F8C0A',package_version_at_import:'version 0.0',package_version_at_last_save:'version 5.0'};
+  nfl.id=mint('fl',flPool);nfl.form_parts=[];nfl.image=null;
+  nfl.layout_number=num;nfl.layout_title=nfl.name=nfl.form_template_name='新規ページ'+num;
+  J.form_layouts.push(nfl);
+  page=J.form_layouts.length-1;sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;
+  commit();renderAll();};
+// v20: 選択に応じた落とし先 — 項目選択中→その項目へ／セクションのみ→そこへ新規項目／未選択→セクションごと新規
+$('newPart').onclick=()=>{if(!J)return;
+  const nt=chain.tf||newTfIn(chain.sec||newSectionObj());
+  const np=clone(tplFP);np.id=mint('fp',allFP);np.name='FP-NEW'+_c.fp;np.part_name=chain.tf?(nt.field_label||'新規入力欄'):'新規入力欄';np.type='text';np.target_field=nt.id;np.x=200;np.y=200;np.width=300;np.height=60;np.part_order=nextPO(nt.id);
   L().form_parts.push(np);sel=new Set([np]);syncChainFromSel();commit();renderAll();};
-$('newField').onclick=()=>{if(!J)return;let sec=chain.sec||pageSecs()[0]||newSectionObj();const nt=newTfIn(sec);chain={sec,tf:nt,fp:null};setTab('tf');commit();renderTree();renderPanel();};
+$('newField').onclick=()=>{if(!J)return;const sec=chain.sec||newSectionObj();const nt=newTfIn(sec);chain={sec,tf:nt,fp:null};setTab('tf');commit();renderTree();renderPanel();};
 $('newSection').onclick=()=>{if(!J)return;const ns=newSectionObj();chain={sec:ns,tf:null,fp:null};setTab('sec');commit();renderTree();renderPanel();};
+// v20: ツリーの一括展開⇄折りたたみ（トグル。全ページ分の状態をまとめて操作）
+$('treeToggle').onclick=()=>{if(!J)return;
+  const allCol=J.target_field_sections.length>0&&J.target_field_sections.every(s=>collapsed.has(key('sec',s)));
+  if(allCol)collapsed.clear();
+  else J.target_field_sections.forEach(s=>{collapsed.add(key('sec',s));(s.target_fields||[]).forEach(t=>collapsed.add(key('tf',t)));});
+  renderTree();};
 // v18: どの項目(target_field)にも属さない枠を全ページから削除（サイズ・位置は無関係）
 $('cleanOrphans').onclick=()=>{if(!J)return;
   const ids=new Set();J.target_field_sections.forEach(s=>(s.target_fields||[]).forEach(t=>ids.add(t.id)));
@@ -822,6 +845,13 @@ function initSplit(id,varName,side){const el=$(id);if(!el)return;
     document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);});
   el.addEventListener('dblclick',()=>{$('app').style.setProperty(varName,'300px');});}// ダブルクリックで既定幅に戻す
 initSplit('splitL','--lw','L');initSplit('splitR','--rw','R');
+// v20: 左ツリーの空白クリックで選択解除（キャンバス空白クリックと同じ挙動）
+$('treeWrap').addEventListener('mousedown',e=>{
+  if(!J)return;if(e.button!==0)return;
+  if(e.target.closest('.row')||e.target.closest('.lhead'))return;// 行・見出し（ボタン含む）は従来どおり
+  if(sel.size===0&&!chain.sec&&!chain.tf&&!chain.fp&&treeMulti.size===0)return;
+  sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;
+  drawParts();renderTree();renderPanel();updInfo();});
 </script>
 </body>
 </html>
