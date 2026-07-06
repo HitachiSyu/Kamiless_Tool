@@ -34,6 +34,7 @@
   .pagebtn{flex:1;min-width:0;text-align:left;border:1px solid #d1d5db;background:#fff;border-radius:5px;padding:5px 8px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .pagebtn.active{background:#2563eb;color:#fff;border-color:#2563eb;}
   .pageedit{flex:none;border:1px solid #d1d5db;background:#f9fafb;border-radius:5px;padding:0 8px;cursor:pointer;font-size:12px;color:#374151;}
+  .pagedel:hover{background:#fee2e2;border-color:#dc2626;color:#dc2626;}
   .pageedit:hover{background:#eef2ff;border-color:#2563eb;}
   .pagerow.dropbefore{box-shadow:0 -3px 0 #f59e0b;}
   .pagerow.dropafter{box-shadow:0 3px 0 #f59e0b;}
@@ -133,7 +134,8 @@
     <span class="sep"></span>
     <button id="newPart">＋入力欄</button><button id="newField">＋項目</button><button id="newSection">＋セクション</button>
     <button id="del" title="Delete">削除</button>
-    <button id="cleanOrphans" title="どの項目(target_field)にも属さない枠を全ページから削除（サイズ・位置は条件にしない）">未関連枠を掃除</button>
+    <button id="cleanOrphans" title="未使用要素を一括削除：未関連枠→枠が無い空項目→項目が無い空セクションの順にまとめて掃除（枠のサイズ・位置は条件にしない）">未使用要素を掃除</button>
+    <button id="nameToField" title="入力欄が1つだけの項目について、その入力欄名(part_name)を空の項目名(field_label)へ一括コピー">欄名→項目名</button>
     <button id="renum" title="位置順に番号を振り直す">番号一括整列</button>
     <span class="sep"></span>
     <span id="imgsize">画像: -</span>
@@ -501,7 +503,24 @@ function renderPages(){const c=$('pages');c.innerHTML='';J.form_layouts.forEach(
   b.onmousedown=e=>{if(e.button!==0)return;pageDown={idx:i,x:e.clientX,y:e.clientY};};// クリック=切替／ドラッグ=並べ替え（mouseupで判定）
   const ed=document.createElement('button');ed.className='pageedit';ed.textContent='✎';ed.title='ページ名を変更';
   ed.onmousedown=e=>e.stopPropagation();ed.onclick=e=>{e.stopPropagation();renamePage(fl,i);};
-  row.appendChild(b);row.appendChild(ed);c.appendChild(row);});}
+  const dl=document.createElement('button');dl.className='pageedit pagedel';dl.textContent='🗑';dl.title='このページを削除';
+  dl.onmousedown=e=>e.stopPropagation();dl.onclick=e=>{e.stopPropagation();deletePage(i);};
+  row.appendChild(b);row.appendChild(ed);row.appendChild(dl);c.appendChild(row);});}
+// ページ削除：その form_layout と配下セクションを消し、後続ページの layout_number / form_layout_number を詰める
+function deletePage(idx){const arr=J.form_layouts;if(!arr[idx])return;
+  if(arr.length<=1){alert('最後の1ページは削除できません。');return;}
+  const fl=arr[idx],delNum=idx+1,nm=pageName(fl,idx);
+  const secs=J.target_field_sections.filter(s=>(s.form_layout_number||1)===delNum);
+  const fpn=Array.isArray(fl.form_parts)?fl.form_parts.length:0;
+  if(!confirm('ページ「'+nm+'」を削除します。\n配下のセクション'+secs.length+'個・このページ上の入力欄'+fpn+'個も削除されます。\nよろしいですか？'))return;
+  arr.forEach((f,i)=>f.__old=i+1);
+  arr.splice(idx,1);
+  J.target_field_sections=J.target_field_sections.filter(s=>(s.form_layout_number||1)!==delNum);
+  const map={};arr.forEach((f,i)=>{map[f.__old]=i+1;});
+  J.target_field_sections.forEach(s=>{const o=s.form_layout_number||1;if(map[o]!=null)s.form_layout_number=map[o];});
+  arr.forEach((f,i)=>{f.layout_number=i+1;delete f.__old;});
+  if(page>idx)page--;page=Math.max(0,Math.min(page,arr.length-1));
+  sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;commit();renderAll();}
 // ---------- page reorder (drag) ----------
 let pageDown=null,pageDrag=null;
 function clearPageDrop(){$('pages').querySelectorAll('.pagerow.dropbefore,.pagerow.dropafter').forEach(r=>r.classList.remove('dropbefore','dropafter'));}
@@ -770,16 +789,47 @@ $('treeToggle').onclick=()=>{if(!J)return;
   else J.target_field_sections.forEach(s=>{collapsed.add(key('sec',s));(s.target_fields||[]).forEach(t=>collapsed.add(key('tf',t)));});
   renderTree();};
 // v18: どの項目(target_field)にも属さない枠を全ページから削除（サイズ・位置は無関係）
+// v24: 入力欄が1つだけの項目に限り、入力欄名(part_name)を空の項目名(field_label)へコピー
+$('nameToField').onclick=()=>{if(!J)return;
+  const byTf={};J.form_layouts.forEach(fl=>(fl.form_parts||[]).forEach(fp=>{(byTf[fp.target_field]=byTf[fp.target_field]||[]).push(fp);}));
+  let n=0;
+  J.target_field_sections.forEach(s=>(s.target_fields||[]).forEach(t=>{
+    const fps=byTf[t.id]||[];
+    const cur=(t.field_label||'').trim();
+    if(fps.length===1&&!cur){const nm=(fps[0].part_name||'').trim();if(nm){t.field_label=nm;n++;}}
+  }));
+  if(!n){alert('対象がありませんでした。\n（入力欄が1つだけ・項目名が空・入力欄名ありの項目が対象です）');return;}
+  commit();renderAll();
+  alert(n+' 件の項目名を、入力欄名からコピーしました。');};
+// v23: 未使用要素の一括掃除（未関連枠 → 空項目 → 空セクション を級联判定）
 $('cleanOrphans').onclick=()=>{if(!J)return;
-  const ids=new Set();J.target_field_sections.forEach(s=>(s.target_fields||[]).forEach(t=>ids.add(t.id)));
-  const byPage={};let total=0;
-  J.form_layouts.forEach((fl,pi)=>{(fl.form_parts||[]).forEach(fp=>{if(!ids.has(fp.target_field)){byPage[pi+1]=(byPage[pi+1]||0)+1;total++;}});});
-  if(!total){alert('どの項目にも属さない枠はありませんでした。');return;}
-  const detail=Object.keys(byPage).map(p=>'P'+p+':'+byPage[p]).join(' / ');
-  if(!confirm('どの項目(target_field)にも属さない枠 '+total+' 個を全ページから削除します。\n（'+detail+'）\n※サイズ・位置は条件にしません（項目に属する枠は大きさ0でも残ります）。\nよろしいですか？'))return;
-  J.form_layouts.forEach(fl=>{if(Array.isArray(fl.form_parts))fl.form_parts=fl.form_parts.filter(fp=>ids.has(fp.target_field));});
+  const tfIds=new Set();J.target_field_sections.forEach(s=>(s.target_fields||[]).forEach(t=>tfIds.add(t.id)));
+  // 全ページの全枠が参照している target_field
+  const usedTf=new Set();J.form_layouts.forEach(fl=>(fl.form_parts||[]).forEach(fp=>usedTf.add(fp.target_field)));
+  // ① 未関連枠（どの項目も指さない枠）
+  let boxTotal=0;const byPage={};
+  J.form_layouts.forEach((fl,pi)=>(fl.form_parts||[]).forEach(fp=>{if(!tfIds.has(fp.target_field)){byPage[pi+1]=(byPage[pi+1]||0)+1;boxTotal++;}}));
+  // ② 空項目（枠が1つも無い項目）
+  let emptyTf=0;J.target_field_sections.forEach(s=>(s.target_fields||[]).forEach(t=>{if(!usedTf.has(t.id))emptyTf++;}));
+  // ③ 空セクション（②を消した後に項目0になるものを含む）
+  let emptySec=0;J.target_field_sections.forEach(s=>{const remain=(s.target_fields||[]).filter(t=>usedTf.has(t.id)).length;if(remain===0)emptySec++;});
+  if(!boxTotal&&!emptyTf&&!emptySec){alert('未使用の要素はありませんでした。');return;}
+  const detail=boxTotal?('\n・未関連枠 '+boxTotal+' 個（'+Object.keys(byPage).map(p=>'P'+p+':'+byPage[p]).join(' / ')+'）'):'';
+  if(!confirm('次の未使用要素をまとめて削除します。'+detail
+    +'\n・空項目（枠なし） '+emptyTf+' 個'
+    +'\n・空セクション（項目なし） '+emptySec+' 個'
+    +'\n\n※枠のサイズ・位置は条件にしません（項目に属する枠は大きさ0でも残ります）。\nよろしいですか？'))return;
+  // 実行：① 未関連枠を削除
+  J.form_layouts.forEach(fl=>{if(Array.isArray(fl.form_parts))fl.form_parts=fl.form_parts.filter(fp=>tfIds.has(fp.target_field));});
+  // ② 空項目を削除（usedTf 基準）＋ 影響セクションの field_number 振り直し
+  J.target_field_sections.forEach(s=>{const before=(s.target_fields||[]).length;s.target_fields=(s.target_fields||[]).filter(t=>usedTf.has(t.id));if(s.target_fields.length!==before)renumTf(s);});
+  // ③ 空セクションを削除
+  J.target_field_sections=J.target_field_sections.filter(s=>(s.target_fields||[]).length>0);
+  // セクション番号をページ毎に振り直し
+  const byLay={};J.target_field_sections.forEach(s=>{const n=s.form_layout_number||1;(byLay[n]=byLay[n]||[]).push(s);});
+  Object.values(byLay).forEach(list=>list.sort((a,b)=>(a.section_number||0)-(b.section_number||0)).forEach((s,i)=>s.section_number=i+1));
   sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;commit();renderAll();
-  alert(total+' 個の未関連枠を削除しました。');};
+  alert('掃除しました：未関連枠 '+boxTotal+' 個 / 空項目 '+emptyTf+' 個 / 空セクション '+emptySec+' 個');};
 $('del').onclick=()=>{if(!J)return;
   if(treeMultiKind==='sec'&&treeMulti.size){const secs=[...treeMulti];const ids=new Set();let tfn=0;secs.forEach(s=>{(s.target_fields||[]).forEach(t=>ids.add(t.id));tfn+=(s.target_fields||[]).length;});
     const fpn=L().form_parts.filter(p=>ids.has(p.target_field)).length;
