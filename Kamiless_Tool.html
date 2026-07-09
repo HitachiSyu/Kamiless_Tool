@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>カミレス JSON ビジュアルエディタ v4</title>
+<title>カミレス JSON ビジュアルエディタ v25</title>
 <style>
   *{box-sizing:border-box;}
   html,body{margin:0;height:100%;font-family:"Meiryo","Segoe UI",sans-serif;font-size:13px;color:#1f2937;}
@@ -94,6 +94,18 @@
   .refRow .ri{flex:1;font-size:13px;color:#374151;}
   .refRow button{border:none;background:#2563eb;color:#fff;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:12px;white-space:nowrap;}
   #refMsg{padding:10px 16px;font-size:12px;color:#6b7280;border-bottom:1px solid #e5e7eb;line-height:1.6;}
+  /* v26: 背景圧縮モーダル */
+  #cmpModal{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9000;display:none;align-items:center;justify-content:center;}
+  #cmpModal.show{display:flex;}
+  #cmpBox{background:#fff;border-radius:10px;width:min(460px,92vw);box-shadow:0 12px 40px rgba(0,0,0,.35);}
+  #cmpBox h3{margin:0;padding:12px 16px;border-bottom:1px solid #e5e7eb;font-size:15px;}
+  #cmpBody{padding:14px 16px;display:flex;flex-direction:column;gap:12px;font-size:13px;color:#374151;}
+  #cmpBody .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  #cmpBody input[type=number]{width:80px;padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;}
+  #cmpBody .hint{font-size:11px;color:#9ca3af;}
+  #cmpFoot{padding:10px 16px;border-top:1px solid #e5e7eb;display:flex;justify-content:flex-end;gap:8px;}
+  #cmpFoot button{border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px;}
+  #cmpRun{background:#16a34a;color:#fff;}#cmpCancel{background:#f3f4f6;color:#374151;}
   #refFoot{padding:10px 16px;border-top:1px solid #e5e7eb;display:flex;align-items:center;gap:12px;}
   #refCount{flex:1;font-size:12px;color:#374151;}
   #refCopy{border:none;background:#16a34a;color:#fff;border-radius:6px;padding:8px 18px;cursor:pointer;font-size:13px;}
@@ -135,13 +147,15 @@
     <button id="newPart">＋入力欄</button><button id="newField">＋項目</button><button id="newSection">＋セクション</button>
     <button id="del" title="Delete">削除</button>
     <button id="cleanOrphans" title="未使用要素を一括削除：未関連枠→枠が無い空項目→項目が無い空セクションの順にまとめて掃除（枠のサイズ・位置は条件にしない）">未使用要素を掃除</button>
-    <button id="nameToField" title="入力欄が1つだけの項目について、その入力欄名(part_name)を空の項目名(field_label)へ一括コピー">欄名→項目名</button>
+    <button id="nameToField" title="入力欄が1つだけ（1対1）の項目について、その入力欄名(part_name)を項目名(field_label)へ一括コピー（既存の項目名も上書き。入力欄名が空のものは対象外）">欄名→項目名</button>
     <button id="renum" title="位置順に番号を振り直す">番号一括整列</button>
     <span class="sep"></span>
     <span id="imgsize">画像: -</span>
     <button id="imgDelete" title="背景画像を削除（image=null・カミレス標準・容量最小・導入OK・環境で再添付）">背景画像を削除</button>
     <button id="imgPlaceholder" title="背景画像を極小1x1画像に置換（容量削減・寸法/id保持）">→占位1x1</button>
     <label class="btn" title="背景画像をアップロード/差し替え（画像 または PDF。PDFはページを選んで背景化）">画像/PDF<input id="imgUpload" type="file" accept="image/*,application/pdf" hidden></label>
+    <button id="compress" title="背景画像を縮小/再エンコードして容量を削減（オプション選択。枠座標も同じ倍率で自動スケール）">背景圧縮</button>
+    <button id="revertCmp" disabled title="直前の「背景圧縮」を取り消して元の画像・枠座標に戻す（この会話中のみ・再読込で無効）">圧縮を戻す</button>
     <span class="sep"></span>
     <input type="color" id="detColor" value="#c8f0f0" title="自動枠生成の対象色">
     <button id="pick" title="スポイト：背景をクリックして色を取得">スポイト</button>
@@ -187,6 +201,18 @@
   <div id="refMsg">セクションのチェック＝配下の項目を丸ごとコピー。項目だけ選ぶことも可能（複数ページ横断OK）。<br>項目だけ選んだ場合は、メイン側で選択中のセクション（無ければ新規「コピーした項目」）に追加されます。</div>
   <div id="refList"></div>
   <div id="refFoot"><span id="refCount">未選択</span><button id="refCopy">選択をコピー</button></div>
+</div></div>
+<div id="cmpModal"><div id="cmpBox">
+  <h3>背景画像の圧縮</h3>
+  <div id="cmpBody">
+    <div class="row"><label><input type="checkbox" id="cmpResize" checked> 縮小する：最大幅</label><input type="number" id="cmpMaxW" value="1240" min="200" max="5000"> px</div>
+    <div class="hint">元画像がこの幅より大きいときだけ縮小（等比）。枠の座標も同じ倍率で自動スケールします。</div>
+    <div class="row"><label><input type="checkbox" id="cmpBin" checked> 二値化（白黒化）：しきい値</label><input type="number" id="cmpThr" value="198" min="1" max="254"></div>
+    <div class="hint">線画・表など白黒だけの背景に有効（容量が大幅減）。色/グレーを含む画像には使わないこと。</div>
+    <div class="row"><label>対象：</label><label><input type="radio" name="cmpScope" value="cur" checked> このページ</label><label><input type="radio" name="cmpScope" value="all"> 全ページ</label></div>
+  </div>
+  <div id="cmpMsg" class="hint" style="padding:0 16px 8px"></div>
+  <div id="cmpFoot"><button id="cmpCancel">キャンセル</button><button id="cmpRun">圧縮実行</button></div>
 </div></div>
 <script>/* pdf.js 3.11.174 (UMD) inlined for offline PDF page import */
 /**
@@ -248,6 +274,7 @@ const PLACEHOLDER='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/
 let J=null,page=0,scale=1;
 let sel=new Set(),chain={sec:null,tf:null,fp:null},tab='fp';
 let collapsed=new Set(),clipboard=null;
+let cmpBackup=null;// v27: 直前の「背景圧縮」の原画像・原座標をメモリに退避（Jには入れない＝書き出しに残らない）
 let tplFP=null,tplTF=null,tplSN=null;
 // v9: 既存要素が1つも無い（完全空白）JSONでも新規作成できるよう、カミレス実ファイルから採取した完全な既定テンプレ。idは付けない（mintで採番）。
 const DEF_SN={form_layout_number:1,name:'',permission_type:'Standard',section_hide_item_on_check_page:'none',section_hide_item_on_input_page:'none',section_label:'',section_number:1,target_fields:[]};
@@ -284,7 +311,7 @@ $('file').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)re
   for(const fl of J.form_layouts){if(!Array.isArray(fl.form_parts))fl.form_parts=[];for(const p of fl.form_parts){allFP.add(p.id);if(!tplFP)tplFP=p;}}
   for(const s of J.target_field_sections){allSN.add(s.id);if(!tplSN)tplSN=s;for(const t of s.target_fields){allTF.add(t.id);if(!tplTF)tplTF=t;}}
   if(!tplFP)tplFP=DEF_FP;if(!tplTF)tplTF=DEF_TF;if(!tplSN)tplSN=DEF_SN;// 空白JSONでも新規作成できるよう既定テンプレで補完
-  page=0;sel.clear();chain={sec:null,tf:null,fp:null};tab='fp';collapsed.clear();lineCache={};treeMulti.clear();treeMultiKind=null;past=[snap()];future=[];renderAll();updUndo();});
+  page=0;sel.clear();chain={sec:null,tf:null,fp:null};tab='fp';collapsed.clear();lineCache={};treeMulti.clear();treeMultiKind=null;cmpBackup=null;$('revertCmp').disabled=true;past=[snap()];future=[];renderAll();updUndo();});
 $('export').onclick=()=>{if(!J)return;const blob=new Blob([JSON.stringify(J)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(J.name||'export')+'_修正済.json';a.click();};
 
 // ---------- image size / delete (⑤) ----------
@@ -789,16 +816,58 @@ $('treeToggle').onclick=()=>{if(!J)return;
   else J.target_field_sections.forEach(s=>{collapsed.add(key('sec',s));(s.target_fields||[]).forEach(t=>collapsed.add(key('tf',t)));});
   renderTree();};
 // v18: どの項目(target_field)にも属さない枠を全ページから削除（サイズ・位置は無関係）
-// v24: 入力欄が1つだけの項目に限り、入力欄名(part_name)を空の項目名(field_label)へコピー
+// v26: 背景画像の圧縮（縮小＋任意で二値化＋PNG再エンコード。枠座標も同倍率でスケール）
+$('compress').onclick=()=>{if(!J)return;if(!L().image||!L().image.data){alert('このページに背景画像がありません。');return;}$('cmpMsg').textContent='';$('cmpModal').classList.add('show');};
+$('cmpCancel').onclick=()=>$('cmpModal').classList.remove('show');
+$('cmpModal').onclick=e=>{if(e.target===$('cmpModal'))$('cmpModal').classList.remove('show');};
+// 1ページ分を処理（Promise）。倍率が変わったら枠座標もスケール。before/after バイト数を返す
+function compressPage(pi){return new Promise(res=>{
+  const fl=J.form_layouts[pi];const im=fl&&fl.image;if(!im||!im.data){res(null);return;}
+  const resize=$('cmpResize').checked,maxW=Math.max(200,+$('cmpMaxW').value||1240),bin=$('cmpBin').checked,thr=Math.max(1,Math.min(254,+$('cmpThr').value||128));
+  const before=b64bytes(im.data);const img=new Image();
+  // 変更前の原状態をメモリに退避（画像データ＋各枠の座標。参照で持つのでJには入らない）
+  const backup={fl,data:im.data,width:im.width,height:im.height,parts:(fl.form_parts||[]).map(p=>({p,x:p.x,y:p.y,width:p.width,height:p.height}))};
+  img.onload=()=>{const ow=img.naturalWidth,oh=img.naturalHeight;
+    let scale=1;if(resize&&ow>maxW)scale=maxW/ow;
+    const nw=Math.max(1,Math.round(ow*scale)),nh=Math.max(1,Math.round(oh*scale));
+    const cv=document.createElement('canvas');cv.width=nw;cv.height=nh;const ctx=cv.getContext('2d');
+    ctx.imageSmoothingEnabled=true;ctx.drawImage(img,0,0,nw,nh);
+    if(bin){const d=ctx.getImageData(0,0,nw,nh),a=d.data;for(let i=0;i<a.length;i+=4){const g=a[i]*.299+a[i+1]*.587+a[i+2]*.114;const v=g<thr?0:255;a[i]=a[i+1]=a[i+2]=v;a[i+3]=255;}ctx.putImageData(d,0,0);}
+    const b64=cv.toDataURL('image/png').split(',')[1];
+    im.data=b64;im.width=nw;im.height=nh;
+    if(scale!==1){(fl.form_parts||[]).forEach(p=>{p.x=Math.round(p.x*scale);p.y=Math.round(p.y*scale);p.width=Math.round(p.width*scale);p.height=Math.round(p.height*scale);});}
+    res({before,after:b64bytes(b64),scale,backup});};
+  img.onerror=()=>res(null);img.src=imgSrc(im.data);});}
+$('cmpRun').onclick=async()=>{
+  const all=document.querySelector('input[name=cmpScope]:checked').value==='all';
+  const targets=all?J.form_layouts.map((_,i)=>i):[page];
+  $('cmpMsg').textContent='処理中…';
+  let tb=0,ta=0,done=0,scaled=0;const backups=[];
+  for(const pi of targets){const r=await compressPage(pi);if(r){tb+=r.before;ta+=r.after;done++;if(r.scale!==1)scaled++;backups.push(r.backup);}}
+  $('cmpModal').classList.remove('show');
+  if(!done){alert('処理対象の画像がありませんでした。');return;}
+  cmpBackup=backups;$('revertCmp').disabled=false;// メモリ退避＋「圧縮を戻す」を有効化
+  past=[snap()];future=[];updUndo();// 画像はUndo対象外→中途半端な巻き戻し防止のため履歴を基準化（戻すのは「圧縮を戻す」で）
+  renderAll();
+  const pct=tb?Math.round((1-ta/tb)*100):0;
+  alert('圧縮完了：'+done+'ページ\n合計 '+fmtKB(tb)+' → '+fmtKB(ta)+'（-'+pct+'%）'+(scaled?'\n（'+scaled+'ページで縮小＝枠座標もスケール）':'\n（縮小なし・再エンコードのみ）')+'\n\n※取り消すには「圧縮を戻す」（Ctrl+Zでは戻りません）');};
+function fmtKB(b){return b>=1048576?(b/1048576).toFixed(2)+'MB':Math.round(b/1024)+'KB';}
+// v27: 直前の圧縮を取り消し（メモリ退避から原画像・原座標を復元）
+$('revertCmp').onclick=()=>{if(!cmpBackup||!cmpBackup.length){alert('元に戻せる圧縮がありません。');return;}
+  cmpBackup.forEach(b=>{if(b.fl&&b.fl.image){b.fl.image.data=b.data;b.fl.image.width=b.width;b.fl.image.height=b.height;}b.parts.forEach(x=>{x.p.x=x.x;x.p.y=x.y;x.p.width=x.width;x.p.height=x.height;});});
+  cmpBackup=null;$('revertCmp').disabled=true;
+  past=[snap()];future=[];updUndo();sel.clear();chain={sec:null,tf:null,fp:null};renderAll();
+  alert('直前の圧縮を元に戻しました。');};
+// v25: 入力欄が1つだけ（1対1）の項目に、その入力欄名(part_name)を項目名(field_label)へコピー。
+//      項目名は既存名でも上書き（1対1が条件）。ただし入力欄名が空のものはスキップ（空で上書きしない）。
 $('nameToField').onclick=()=>{if(!J)return;
   const byTf={};J.form_layouts.forEach(fl=>(fl.form_parts||[]).forEach(fp=>{(byTf[fp.target_field]=byTf[fp.target_field]||[]).push(fp);}));
   let n=0;
   J.target_field_sections.forEach(s=>(s.target_fields||[]).forEach(t=>{
     const fps=byTf[t.id]||[];
-    const cur=(t.field_label||'').trim();
-    if(fps.length===1&&!cur){const nm=(fps[0].part_name||'').trim();if(nm){t.field_label=nm;n++;}}
+    if(fps.length===1){const nm=(fps[0].part_name||'').trim();if(nm&&t.field_label!==nm){t.field_label=nm;n++;}}
   }));
-  if(!n){alert('対象がありませんでした。\n（入力欄が1つだけ・項目名が空・入力欄名ありの項目が対象です）');return;}
+  if(!n){alert('対象がありませんでした。\n（入力欄が1つだけ・入力欄名ありの項目が対象です）');return;}
   commit();renderAll();
   alert(n+' 件の項目名を、入力欄名からコピーしました。');};
 // v23: 未使用要素の一括掃除（未関連枠 → 空項目 → 空セクション を級联判定）
@@ -857,8 +926,13 @@ $('del').onclick=()=>{if(!J)return;
   sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;commit();renderAll();};
 
 // ---------- copy / paste (④) ----------
-function doCopy(){if(!J)return;if(tab==='tf'&&chain.tf){clipboard={type:'tf',tf:clone(chain.tf),fps:fpsOfTf(chain.tf.id).map(clone)};}
-  else if(sel.size){clipboard={type:'fp',fps:[...sel].map(fp=>({data:clone(fp),tf:fp.target_field}))};}}
+function doCopy(){if(!J)return;
+  // 項目コピー：ツリー複数選択(treeMulti)なら全部、単一選択なら chain.tf
+  let tfs=null;
+  if(treeMultiKind==='tf'&&treeMulti.size)tfs=[...treeMulti].sort((a,b)=>(a.field_number||0)-(b.field_number||0));
+  else if(tab==='tf'&&chain.tf)tfs=[chain.tf];
+  if(tfs){clipboard={type:'tfs',items:tfs.map(t=>({tf:clone(t),fps:fpsOfTf(t.id).map(clone)}))};return;}
+  if(sel.size){clipboard={type:'fp',fps:[...sel].map(fp=>({data:clone(fp),tf:fp.target_field}))};}}
 function nextPO(tfid){const sibs=L().form_parts.filter(p=>p.target_field===tfid);return Math.max(0,...sibs.map(p=>p.part_order||0))+1;}
 function doPaste(forceNew){if(!clipboard)return;const ns=new Set();
   if(clipboard.type==='fp'){
@@ -868,10 +942,12 @@ function doPaste(forceNew){if(!clipboard)return;const ns=new Set();
     clipboard.fps.forEach(c=>{let useTf=tfid;
       if(!useTf){const otf=findTf(c.tf);const sec=(otf&&secOfTf(c.tf))||pageSecs()[0]||newSectionObj();const ntf=clone(otf||tplTF);ntf.id=mint('tf',allTF);ntf.name='TF-CP'+_c.tf;ntf.field_label=((otf?otf.field_label:'項目'))+'_copy';ntf.field_number=sec.target_fields.length+1;sec.target_fields.push(ntf);useTf=ntf.id;}
       const nfp=clone(c.data);nfp.id=mint('fp',allFP);nfp.name='FP-CP'+_c.fp;nfp.target_field=useTf;nfp.x+=20;nfp.y+=20;nfp.part_order=nextPO(useTf);L().form_parts.push(nfp);ns.add(nfp);});
-  } else { // type tf : 項目を複製（配下の入力欄ごと）
+  } else if(clipboard.type==='tfs'){ // 項目（複数可）を複製：配下の入力欄ごと。貼り先は選択中セクション（無ければ新規）
     const sec=(!forceNew&&chain.sec)?chain.sec:newSectionObj();
-    const ntf=clone(clipboard.tf);ntf.id=mint('tf',allTF);ntf.name='TF-CP'+_c.tf;ntf.field_label=clipboard.tf.field_label+'_copy';ntf.field_number=sec.target_fields.length+1;sec.target_fields.push(ntf);
-    clipboard.fps.forEach((cf,i)=>{const nfp=clone(cf);nfp.id=mint('fp',allFP);nfp.name='FP-CP'+_c.fp;nfp.target_field=ntf.id;nfp.x+=20;nfp.y+=20;nfp.part_order=i+1;L().form_parts.push(nfp);ns.add(nfp);});
+    clipboard.items.forEach(it=>{
+      const ntf=clone(it.tf);ntf.id=mint('tf',allTF);ntf.name='TF-CP'+_c.tf;ntf.field_label=(it.tf.field_label||'項目')+'_copy';ntf.field_number=sec.target_fields.length+1;sec.target_fields.push(ntf);
+      it.fps.forEach((cf,i)=>{const nfp=clone(cf);nfp.id=mint('fp',allFP);nfp.name='FP-CP'+_c.fp;nfp.target_field=ntf.id;nfp.x+=20;nfp.y+=20;nfp.part_order=i+1;L().form_parts.push(nfp);ns.add(nfp);});
+    });
   }
   sel=ns;syncChainFromSel();commit();renderAll();}
 
