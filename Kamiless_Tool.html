@@ -954,6 +954,20 @@ function doPaste(forceNew){if(!clipboard)return;const ns=new Set();
 // ---------- toggles / zoom / keys ----------
 $('togglePages').onclick=()=>{const p=$('pages');const hide=p.style.display!=='none';p.style.display=hide?'none':'';$('togglePages').textContent=hide?'展開':'折りたたみ';};
 $('zoomin').onclick=()=>{scale=Math.min(3,scale*1.2);renderPage();};$('zoomout').onclick=()=>{scale=Math.max(.2,scale/1.2);renderPage();};
+// v29: 中央キャンバスで Ctrl+ホイール→ズーム（カーソル位置を中心に。通常ホイールはスクロールのまま）
+$('center').addEventListener('wheel',e=>{
+  if(!(e.ctrlKey||e.metaKey)||!J)return;
+  e.preventDefault();
+  const c=$('center'),rect=c.getBoundingClientRect();
+  const ox=e.clientX-rect.left,oy=e.clientY-rect.top;// カーソルのビュー内座標
+  const cx=c.scrollLeft+ox,cy=c.scrollTop+oy;// カーソル下のコンテンツ座標
+  const old=scale,factor=e.deltaY<0?1.2:1/1.2;
+  scale=Math.max(.2,Math.min(3,scale*factor));
+  if(scale===old)return;
+  renderPage();
+  const r=scale/old;
+  c.scrollLeft=cx*r-ox;c.scrollTop=cy*r-oy;// カーソル下の点を固定
+},{passive:false});
 $('undo').onclick=undo;$('redo').onclick=redo;
 window.addEventListener('keydown',e=>{if(!J)return;const k=e.key.toLowerCase();const inInput=document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='SELECT';
   if((e.ctrlKey||e.metaKey)&&k==='z'){e.preventDefault();e.shiftKey?redo():undo();return;}
