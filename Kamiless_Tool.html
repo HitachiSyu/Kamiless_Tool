@@ -149,6 +149,11 @@
     <button id="cleanOrphans" title="未使用要素を一括削除：未関連枠→枠が無い空項目→項目が無い空セクションの順にまとめて掃除（枠のサイズ・位置は条件にしない）">未使用要素を掃除</button>
     <button id="nameToField" title="入力欄が1つだけ（1対1）の項目について、その入力欄名(part_name)を項目名(field_label)へ一括コピー（既存の項目名も上書き。入力欄名が空のものは対象外）">欄名→項目名</button>
     <button id="renum" title="位置順に番号を振り直す">番号一括整列</button>
+    <button id="alignX" title="選択中の入力欄を自動で「列」に分け、各列を最も左のXに揃える（1列だけ選べば全部同じXに。行列マトリクスもこれ1回で列整列）">列揃え(X)</button>
+    <button id="alignY" title="選択中の入力欄を自動で「行」に分け、各行を最も上のYに揃える（1行だけ選べば全部同じYに。行列マトリクスもこれ1回で行整列）">行揃え(Y)</button>
+    <button id="alignW" title="選択枠を自動で「列」に分け、各列内で幅を最小に統一（1列だけ選べば全部同じ幅に。マトリクスは列ごとに幅が揃う）">列内幅揃え</button>
+    <button id="alignH" title="選択枠を自動で「行」に分け、各行内で高さを最小に統一（1行だけ選べば全部同じ高さに。マトリクスは行ごとに高さが揃う）">行内高揃え</button>
+    <label class="cb" title="列揃え/行揃えの分割しきい値。座標差がこの値以下なら同じ列/行とみなす（狭い列が繋がるなら小さく、1列が割れるなら大きく）">整列許容<input id="alignTol" type="number" value="15" min="1" max="300"> px</label>
     <span class="sep"></span>
     <span id="imgsize">画像: -</span>
     <button id="imgDelete" title="背景画像を削除（image=null・カミレス標準・容量最小・導入OK・環境で再添付）">背景画像を削除</button>
@@ -753,6 +758,21 @@ $('renum').onclick=()=>{if(!J)return;const posTf=tf=>{const f=fpsOfTf(tf.id);if(
   const posSec=sec=>{const all=sec.target_fields.flatMap(t=>fpsOfTf(t.id));if(!all.length)return[1e9,1e9];return[Math.min(...all.map(p=>p.y)),Math.min(...all.map(p=>p.x))];};
   secs.slice().sort((a,b)=>{const pa=posSec(a),pb=posSec(b);return pa[0]-pb[0]||pa[1]-pb[1];}).forEach((s,i)=>s.section_number=i+1);
   commit();renderAll();alert('セクション/項目/入力欄 番号を位置順に整列しました。');};
+// v31〜v33: 選択枠を clusterAxis で列/行に自動分割し、各グループ内で targetKey を最小値へ揃える。
+//   列揃え=(x,x)／行揃え=(y,y)／列内幅揃え=(x,width)／行内高揃え=(y,height)。1列/1行だけなら1グループ＝全部同値。
+//   閾値は「整列許容」(既定15px・可変)。座標差がこれ以下なら同じ列/行とみなす。
+function clusterApply(clusterAxis,targetKey){if(!J)return;
+  if(sel.size<2){alert('入力欄を2つ以上選択してください（キャンバスでCtrl/Shift＋クリックや範囲選択）。');return;}
+  const arr=[...sel];const thr=Math.max(1,+$('alignTol').value||15);
+  const sorted=arr.slice().sort((a,b)=>a[clusterAxis]-b[clusterAxis]);
+  const groups=[[sorted[0]]];
+  for(let i=1;i<sorted.length;i++){if(sorted[i][clusterAxis]-sorted[i-1][clusterAxis]<=thr)groups[groups.length-1].push(sorted[i]);else groups.push([sorted[i]]);}
+  groups.forEach(g=>{const v=Math.min(...g.map(p=>p[targetKey]||0));if(v>0||targetKey[0]!=='w'&&targetKey[0]!=='h')g.forEach(p=>p[targetKey]=v);});
+  commit();drawParts();renderPanel();updInfo();}
+$('alignX').onclick=()=>clusterApply('x','x');       // 列揃え：x で分列→各列を最左xへ
+$('alignY').onclick=()=>clusterApply('y','y');       // 行揃え：y で分行→各行を最上yへ
+$('alignW').onclick=()=>clusterApply('x','width');   // 列内幅揃え：x で分列→各列内で幅を最小へ
+$('alignH').onclick=()=>clusterApply('y','height');  // 行内高揃え：y で分行→各行内で高さを最小へ
 
 // ---------- canvas interaction ----------
 function svgPt(evt){const svg=$('svg');const pt=svg.createSVGPoint();pt.x=evt.clientX;pt.y=evt.clientY;return pt.matrixTransform(svg.getScreenCTM().inverse());}
