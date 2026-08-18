@@ -522,7 +522,8 @@ function pickAt(px,py){const g=imgData();if(!g)return;if(px<0||py<0||px>=g.W||py
 
 // ---------- render ----------
 function renderAll(){renderPages();renderPage();renderTree();renderPanel();updInfo();}
-function updInfo(){if(!J){$('info').textContent='—';return;}$('info').textContent=`${J.name||''} | ${pageName(L(),page)}（P${page+1}/${J.form_layouts.length}） | 枠 ${L().form_parts.length} | 選択 ${sel.size}`;}
+function tplTotals(){const ns=J.target_field_sections.length;let ntf=0;J.target_field_sections.forEach(s=>ntf+=(s.target_fields||[]).length);let nfp=0;J.form_layouts.forEach(fl=>nfp+=(fl.form_parts||[]).length);return{ns,ntf,nfp};}
+function updInfo(){if(!J){$('info').textContent='—';return;}const t=tplTotals();$('info').textContent=`${J.name||''}（セクション${t.ns}・項目${t.ntf}・入力欄${t.nfp}） | ${pageName(L(),page)}（P${page+1}/${J.form_layouts.length}） | 枠 ${L().form_parts.length} | 選択 ${sel.size}`;}
 // ページ名 = layout_title（= name = form_template_name）。無ければ「ページN」
 function pageName(fl,i){return (fl&&(fl.layout_title||fl.name||fl.form_template_name))||('ページ'+(i+1));}
 // 改名時は一致していた3フィールドをまとめて更新（カミレスでは同値のため）
@@ -714,6 +715,7 @@ $('tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;s
 function setTab(t){tab=t;$('tabs').querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.t===t));}
 function frow(label,value,onchg,type='text',opts){const d=document.createElement('div');d.className='frow';d.innerHTML=`<label>${label}</label>`;let el;
   if(type==='select'){el=document.createElement('select');opts.forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;if(value===o)op.selected=true;el.appendChild(op);});el.onchange=()=>onchg(el.value);}
+  else if(type==='checkbox'){el=document.createElement('input');el.type='checkbox';el.checked=value===true;el.style.flex='none';el.style.width='auto';el.style.marginRight='auto';el.onchange=()=>onchg(el.checked);}
   else{el=document.createElement('input');if(type==='number')el.type='number';el.value=value??'';el.onchange=()=>onchg(type==='number'?Math.round(+el.value||0):el.value);}
   d.appendChild(el);return d;}
 function roEl(label,value){const d=document.createElement('div');d.className='frow';d.innerHTML=`<label>${label}</label><span class="muted" style="flex:1;word-break:break-all">${value}</span>`;return d;}
@@ -727,6 +729,7 @@ function renderPanel(){const box=$('panel');box.innerHTML='';if(!J){box.innerHTM
     box.appendChild(frow('項目番号',t.field_number,v=>reorder('tf',t,v),'number'));
     box.appendChild(frow('項目',t.field_label,v=>{t.field_label=v;commit();renderTree();}));
     box.appendChild(frow('型',t.field_type,v=>{t.field_type=v;commit();},'select',['text','date','number','picklist','checkbox','radio','file','formula']));
+    box.appendChild(frow('必須',t.required===true,v=>{t.required=v;commit();},'checkbox'));
     box.appendChild(roEl('id',t.id));box.appendChild(roEl('入力欄数',fpsOfTf(t.id).length));
   } else {const p=chain.fp;
     if(sel.size>1){const b=bboxOf(sel);box.innerHTML=`<p><b>${sel.size}個 選択中</b></p><p class="muted">まとめて移動・拡縮・コピー(Ctrl+C)できます。<br>範囲 x:${Math.round(b.x0)}–${Math.round(b.x1)} y:${Math.round(b.y0)}–${Math.round(b.y1)}</p>`;return;}
@@ -947,6 +950,11 @@ $('del').onclick=()=>{if(!J)return;
 
 // ---------- copy / paste (④) ----------
 function doCopy(){if(!J)return;
+  // セクションコピー（v35）：ツリー複数選択(treeMulti)なら全部、単一選択なら chain.sec。配下の項目・入力欄ごと3階層で保存
+  let secs=null;
+  if(treeMultiKind==='sec'&&treeMulti.size)secs=[...treeMulti].sort((a,b)=>(a.section_number||0)-(b.section_number||0));
+  else if(tab==='sec'&&chain.sec)secs=[chain.sec];
+  if(secs){clipboard={type:'secs',items:secs.map(s=>({sec:clone(s),tfs:(s.target_fields||[]).map(t=>({tf:clone(t),fps:fpsOfTf(t.id).map(clone)}))}))};return;}
   // 項目コピー：ツリー複数選択(treeMulti)なら全部、単一選択なら chain.tf
   let tfs=null;
   if(treeMultiKind==='tf'&&treeMulti.size)tfs=[...treeMulti].sort((a,b)=>(a.field_number||0)-(b.field_number||0));
@@ -967,6 +975,14 @@ function doPaste(forceNew){if(!clipboard)return;const ns=new Set();
     clipboard.items.forEach(it=>{
       const ntf=clone(it.tf);ntf.id=mint('tf',allTF);ntf.name='TF-CP'+_c.tf;ntf.field_label=(it.tf.field_label||'項目')+'_copy';ntf.field_number=sec.target_fields.length+1;sec.target_fields.push(ntf);
       it.fps.forEach((cf,i)=>{const nfp=clone(cf);nfp.id=mint('fp',allFP);nfp.name='FP-CP'+_c.fp;nfp.target_field=ntf.id;nfp.x+=20;nfp.y+=20;nfp.part_order=i+1;L().form_parts.push(nfp);ns.add(nfp);});
+    });
+  } else if(clipboard.type==='secs'){ // v35: セクション（複数可）を複製：配下の項目・入力欄ごと3階層で複製。常に新規セクションとして現在ページ末尾へ
+    clipboard.items.forEach(S=>{
+      const nsec=clone(S.sec);nsec.id=mint('sn',allSN);nsec.name='SN-CP'+_c.sn;nsec.section_label=(S.sec.section_label||'セクション')+'_copy';nsec.form_layout_number=page+1;nsec.section_number=pageSecs().length+1;nsec.target_fields=[];J.target_field_sections.push(nsec);
+      S.tfs.forEach(T=>{
+        const ntf=clone(T.tf);ntf.id=mint('tf',allTF);ntf.name='TF-CP'+_c.tf;ntf.field_number=nsec.target_fields.length+1;nsec.target_fields.push(ntf);
+        T.fps.forEach((cf,i)=>{const nfp=clone(cf);nfp.id=mint('fp',allFP);nfp.name='FP-CP'+_c.fp;nfp.target_field=ntf.id;nfp.x+=20;nfp.y+=20;nfp.part_order=i+1;L().form_parts.push(nfp);ns.add(nfp);});
+      });
     });
   }
   sel=ns;syncChainFromSel();commit();renderAll();}
