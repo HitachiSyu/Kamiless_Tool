@@ -161,6 +161,8 @@
     <label class="btn" title="背景画像をアップロード/差し替え（画像 または PDF。PDFはページを選んで背景化）">画像/PDF<input id="imgUpload" type="file" accept="image/*,application/pdf" hidden></label>
     <button id="compress" title="背景画像を縮小/再エンコードして容量を削減（オプション選択。枠座標も同じ倍率で自動スケール）">背景圧縮</button>
     <button id="revertCmp" disabled title="直前の「背景圧縮」を取り消して元の画像・枠座標に戻す（この会話中のみ・再読込で無効）">圧縮を戻す</button>
+    <button id="dlAttach" title="全ページの背景画像（添付ファイル相当）を1枚ずつダウンロード">添付ファイルDL</button>
+    <button id="mkPdf" title="全ページの背景画像を1つのPDFにまとめて新規作成・ダウンロード（元がPDFでも再構成されたPDFになります）">PDFへ結合</button>
     <span class="sep"></span>
     <input type="color" id="detColor" value="#c8f0f0" title="自動枠生成の対象色">
     <button id="pick" title="スポイト：背景をクリックして色を取得">スポイト</button>
@@ -881,6 +883,70 @@ $('revertCmp').onclick=()=>{if(!cmpBackup||!cmpBackup.length){alert('元に戻�
   cmpBackup=null;$('revertCmp').disabled=true;
   past=[snap()];future=[];updUndo();sel.clear();chain={sec:null,tf:null,fp:null};renderAll();
   alert('直前の圧縮を元に戻しました。');};
+
+// ===== v37: 添付ファイル（背景画像）の一括ダウンロード／PDF結合 =====
+// 読み取り専用の書き出し機能。J（データ本体）は一切変更しないため commit()/Undo は不要。
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function sanitizeFileName(s){return String(s||'').replace(/[\\/:*?"<>|]/g,'_').trim()||'page';}
+function downloadBlob(blob,filename){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+function b64ToBytes(b64){const bin=atob(String(b64).split(',').pop());const arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);return arr;}
+function pagesWithImage(){const out=[];J.form_layouts.forEach((fl,i)=>{if(fl.image&&fl.image.data)out.push({fl,i});});return out;}
+$('dlAttach').onclick=async()=>{if(!J)return;
+  const targets=pagesWithImage();const skipped=J.form_layouts.length-targets.length;
+  if(!targets.length){alert('背景画像のあるページがありません。');return;}
+  $('dlAttach').disabled=true;
+  try{
+    for(let k=0;k<targets.length;k++){const{fl,i}=targets[k];
+      const bytes=b64ToBytes(fl.image.data);
+      const name=String(i+1).padStart(2,'0')+'_'+sanitizeFileName(pageName(fl,i))+'.png';
+      downloadBlob(new Blob([bytes],{type:'image/png'}),name);
+      if(k<targets.length-1)await sleep(250);
+    }
+    alert('添付ファイルを '+targets.length+' 件ダウンロードしました。'+(skipped?'\n（背景画像の無いページ '+skipped+' 件はスキップ）':''));
+  } finally{$('dlAttach').disabled=false;}};
+// 各ページの背景画像をJPEG化してcanvas経由で取得（透過は白背景で潰す＝JPEGはアルファ非対応のため）
+function loadPageJpeg(fl){return new Promise((resolve,reject)=>{
+  const img=new Image();
+  img.onload=()=>{const w=img.naturalWidth,h=img.naturalHeight;
+    const cv=document.createElement('canvas');cv.width=w;cv.height=h;const ctx=cv.getContext('2d');
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0);
+    resolve({jpegBytes:b64ToBytes(cv.toDataURL('image/jpeg',0.85)),wPx:w,hPx:h,dpi:fl.image.dpi||96});};
+  img.onerror=()=>reject(new Error('image load failed'));
+  img.src=imgSrc(fl.image.data);});}
+// 極小PDFライター（外部ライブラリ不使用）。JPEGを/DCTDecodeでそのまま埋め込む1オブジェクト構成×ページ数。
+function _asciiBytes(str){const u=new Uint8Array(str.length);for(let i=0;i<str.length;i++)u[i]=str.charCodeAt(i)&0xff;return u;}
+function assemblePdf(pages){const chunks=[];let len=0;
+  const push=x=>{const u=(typeof x==='string')?_asciiBytes(x):x;chunks.push(u);len+=u.length;return len;};
+  const offsets=[0];const N=pages.length;const totalObjs=2+3*N;
+  push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+  offsets[1]=len;push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  const kids=[];for(let j=0;j<N;j++)kids.push((3+3*j)+' 0 R');
+  offsets[2]=len;push('2 0 obj\n<< /Type /Pages /Count '+N+' /Kids ['+kids.join(' ')+'] >>\nendobj\n');
+  pages.forEach((p,j)=>{const pageObj=3+j*3,contentObj=pageObj+1,imgObj=pageObj+2;
+    const content='q '+p.wPt.toFixed(2)+' 0 0 '+p.hPt.toFixed(2)+' 0 0 cm /Im0 Do Q';
+    offsets[pageObj]=len;push(pageObj+' 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+p.wPt.toFixed(2)+' '+p.hPt.toFixed(2)+'] /Resources << /XObject << /Im0 '+imgObj+' 0 R >> >> /Contents '+contentObj+' 0 R >>\nendobj\n');
+    offsets[contentObj]=len;push(contentObj+' 0 obj\n<< /Length '+content.length+' >>\nstream\n'+content+'\nendstream\nendobj\n');
+    offsets[imgObj]=len;push(imgObj+' 0 obj\n<< /Type /XObject /Subtype /Image /Width '+p.wPx+' /Height '+p.hPx+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+p.jpegBytes.length+' >>\nstream\n');
+    push(p.jpegBytes);push('\nendstream\nendobj\n');});
+  const xrefStart=len;let xref='xref\n0 '+(totalObjs+1)+'\n0000000000 65535 f \n';
+  for(let n=1;n<=totalObjs;n++)xref+=String(offsets[n]).padStart(10,'0')+' 00000 n \n';
+  push(xref);push('trailer\n<< /Size '+(totalObjs+1)+' /Root 1 0 R >>\nstartxref\n'+xrefStart+'\n%%EOF');
+  const out=new Uint8Array(len);let pos=0;chunks.forEach(c=>{out.set(c,pos);pos+=c.length;});return out;}
+$('mkPdf').onclick=async()=>{if(!J)return;
+  const targets=pagesWithImage();const skipped=J.form_layouts.length-targets.length;
+  if(!targets.length){alert('背景画像のあるページがありません。');return;}
+  $('mkPdf').disabled=true;const origLabel=$('mkPdf').textContent;$('mkPdf').textContent='生成中…';
+  try{
+    const pages=[];
+    for(const{fl} of targets){const r=await loadPageJpeg(fl);
+      pages.push({jpegBytes:r.jpegBytes,wPx:r.wPx,hPx:r.hPx,wPt:r.wPx*72/r.dpi,hPt:r.hPx*72/r.dpi});}
+    const bytes=assemblePdf(pages);
+    const blob=new Blob([bytes],{type:'application/pdf'});
+    downloadBlob(blob,sanitizeFileName(J.name||'テンプレート')+'_全ページ.pdf');
+    alert('PDFを作成しました：'+pages.length+'ページ・'+fmtKB(blob.size)+(skipped?'\n（背景画像の無いページ '+skipped+' 件はスキップ）':''));
+  }catch(err){alert('PDF作成に失敗しました:\n'+err);}
+  finally{$('mkPdf').disabled=false;$('mkPdf').textContent=origLabel;}};
+
 // v25: 入力欄が1つだけ（1対1）の項目に、その入力欄名(part_name)を項目名(field_label)へコピー。
 //      項目名は既存名でも上書き（1対1が条件）。ただし入力欄名が空のものはスキップ（空で上書きしない）。
 $('nameToField').onclick=()=>{if(!J)return;
