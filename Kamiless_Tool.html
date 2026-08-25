@@ -214,7 +214,7 @@
   <div id="cmpBody">
     <div class="row"><label><input type="checkbox" id="cmpResize" checked> 縮小する：最大幅</label><input type="number" id="cmpMaxW" value="1240" min="200" max="5000"> px</div>
     <div class="hint">元画像がこの幅より大きいときだけ縮小（等比）。枠の座標も同じ倍率で自動スケールします。</div>
-    <div class="row"><label><input type="checkbox" id="cmpBin" checked> 二値化（白黒化）：しきい値</label><input type="number" id="cmpThr" value="198" min="1" max="254"></div>
+    <div class="row"><label><input type="checkbox" id="cmpBin" checked> 二値化（白黒化）：しきい値</label><input type="number" id="cmpThr" value="230" min="1" max="254"></div>
     <div class="hint">線画・表など白黒だけの背景に有効（容量が大幅減）。色/グレーを含む画像には使わないこと。</div>
     <div class="row"><label>対象：</label><label><input type="radio" name="cmpScope" value="cur" checked> このページ</label><label><input type="radio" name="cmpScope" value="all"> 全ページ</label></div>
   </div>
@@ -848,7 +848,7 @@ $('cmpModal').onclick=e=>{if(e.target===$('cmpModal'))$('cmpModal').classList.re
 // 1ページ分を処理（Promise）。倍率が変わったら枠座標もスケール。before/after バイト数を返す
 function compressPage(pi){return new Promise(res=>{
   const fl=J.form_layouts[pi];const im=fl&&fl.image;if(!im||!im.data){res(null);return;}
-  const resize=$('cmpResize').checked,maxW=Math.max(200,+$('cmpMaxW').value||1240),bin=$('cmpBin').checked,thr=Math.max(1,Math.min(254,+$('cmpThr').value||128));
+  const resize=$('cmpResize').checked,maxW=Math.max(200,+$('cmpMaxW').value||1240),bin=$('cmpBin').checked,thr=Math.max(1,Math.min(254,+$('cmpThr').value||230));
   const before=b64bytes(im.data);const img=new Image();
   // 変更前の原状態をメモリに退避（画像データ＋各枠の座標。参照で持つのでJには入らない）
   const backup={fl,data:im.data,width:im.width,height:im.height,parts:(fl.form_parts||[]).map(p=>({p,x:p.x,y:p.y,width:p.width,height:p.height}))};
