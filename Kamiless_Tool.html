@@ -82,6 +82,17 @@
   .pdfThumb canvas{width:100%;height:auto;display:block;border:1px solid #d1d5db;background:#fff;}
   .pdfThumb .pn{margin-top:6px;font-size:12px;color:#374151;}
   #pdfMsg{padding:10px 16px;font-size:12px;color:#6b7280;border-top:1px solid #e5e7eb;}
+  /* v39: PDF複数ページ取込（チェック＋取り込み順バッジ） */
+  .pdfThumb{position:relative;}
+  .pdfThumb.sel{border-color:#2563eb;background:#eff6ff;}
+  .pdfThumb .pchk{position:absolute;top:6px;left:6px;width:16px;height:16px;cursor:pointer;}
+  .pdfThumb .pdfOrder{position:absolute;top:4px;right:4px;min-width:20px;height:20px;border-radius:10px;background:#2563eb;color:#fff;font-size:11px;line-height:20px;text-align:center;padding:0 5px;display:none;}
+  .pdfThumb.sel .pdfOrder{display:block;}
+  #pdfFoot{padding:10px 16px;border-top:1px solid #e5e7eb;display:none;align-items:center;gap:12px;}
+  #pdfFoot.show{display:flex;}
+  #pdfCount{flex:1;font-size:12px;color:#374151;}
+  #pdfImport{border:none;background:#16a34a;color:#fff;border-radius:6px;padding:8px 18px;cursor:pointer;font-size:13px;}
+  #pdfImport:disabled{background:#9ca3af;cursor:default;}
   /* v11: コピー元ページ選択モーダル */
   #refModal{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9000;display:none;align-items:center;justify-content:center;}
   #refModal.show{display:flex;}
@@ -136,6 +147,7 @@
 <div id="app">
   <div id="toolbar">
     <label class="btn">JSON読込<input id="file" type="file" accept=".json" hidden></label>
+    <label class="btn" title="PDFを読み込んで、選んだページ分の空ページ（背景画像のみ）を一括作成。JSON未読込なら新規テンプレートとして作成、読込済みなら末尾に追加">PDF読込<input id="pdfLoad" type="file" accept="application/pdf" hidden></label>
     <button id="export">JSON書出</button>
     <span class="sep"></span>
     <label class="btn" title="別のフォームテンプレート(JSON)をコピー元として開く（参照のみ・本体は変更しません）">コピー元を開く<input id="refFile" type="file" accept=".json" hidden></label>
@@ -199,6 +211,7 @@
   </div>
   <div id="pdfGrid"></div>
   <div id="pdfMsg">背景にしたいページをクリックしてください。解像度を変えると再描画されます（高いほど鮮明・容量増。150dpi推奨）。</div>
+  <div id="pdfFoot"><span id="pdfCount"></span><button id="pdfImport">この順で読み込み</button></div>
 </div></div>
 <div id="refModal"><div id="refBox">
   <div id="refHead">
@@ -214,8 +227,15 @@
   <div id="cmpBody">
     <div class="row"><label><input type="checkbox" id="cmpResize" checked> 縮小する：最大幅</label><input type="number" id="cmpMaxW" value="1240" min="200" max="5000"> px</div>
     <div class="hint">元画像がこの幅より大きいときだけ縮小（等比）。枠の座標も同じ倍率で自動スケールします。</div>
-    <div class="row"><label><input type="checkbox" id="cmpBin" checked> 二値化（白黒化）：しきい値</label><input type="number" id="cmpThr" value="230" min="1" max="254"></div>
-    <div class="hint">線画・表など白黒だけの背景に有効（容量が大幅減）。色/グレーを含む画像には使わないこと。</div>
+    <div class="row"><label><input type="checkbox" id="cmpBin" checked> 二値化（白黒化）</label></div>
+    <div class="row" style="margin-left:22px"><label>判定：</label>
+      <label><input type="radio" name="cmpMetric" value="dist" checked> 色距離（色を公平に判定・推奨）</label>
+      <label><input type="radio" name="cmpMetric" value="luma"> 輝度（明るさ）</label></div>
+    <div class="row" style="margin-left:22px"><label>しきい値：</label>
+      <label><input type="radio" name="cmpThrMode" value="auto" checked> 自動（Otsu法・推奨）</label>
+      <label><input type="radio" name="cmpThrMode" value="manual"> 手動</label>
+      <input type="number" id="cmpThr" value="60" min="1" max="254" disabled></div>
+    <div class="hint">線画・表など白黒だけの背景に有効（容量が大幅減）。通常は既定（色距離・自動）のままでOK。色付きの線・文字も黒くしたい場合は「色距離」のままにする。写真等グレー諧調を保ちたい画像には使わないこと。</div>
     <div class="row"><label>対象：</label><label><input type="radio" name="cmpScope" value="cur" checked> このページ</label><label><input type="radio" name="cmpScope" value="all"> 全ページ</label></div>
   </div>
   <div id="cmpMsg" class="hint" style="padding:0 16px 8px"></div>
@@ -287,9 +307,16 @@ let tplFP=null,tplTF=null,tplSN=null;
 const DEF_SN={form_layout_number:1,name:'',permission_type:'Standard',section_hide_item_on_check_page:'none',section_hide_item_on_input_page:'none',section_label:'',section_number:1,target_fields:[]};
 const DEF_TF={checkbox_display_type:'none',do_not_overwrite:false,editable_at_remand:'able',field_label:'',field_number:1,field_type:'text',hidden_correct_request:false,hide_item_on_check_page:'none',hide_item_on_input_page:'none',hide_setting_for_item:false,max_checks:0,min_checks:0,name:'',not_drawing:false,not_drawing_border:false,not_drawing_value:false,permission_type:'Standard',required:false,save_as_part_name:false,target_field_size:12};
 const DEF_FP={accept_business_day_only:false,button_required_confirm:false,character_count:false,character_type:'any',checkbox_type:'label',conversion:'none',file_extension:'jpg,jpeg,bmp,png',font_family:'Meiryo',font_size:'18',form_part_size:12,hand_writing_line_width:5,height:60,letter_truncation:'neverTruncate',line_break_flag:false,line_spacing:10,link_setting:'none',link_use:false,make_input_field_for_confirmation:false,margin_x:0,margin_y:0,max_file_number:1,max_file_size:4,max_length:0,min_length:0,name:'',num_of_lines_in_textarea:3,number_step:'1',part_name:'',part_order:1,payment_service_is_transaction_amount:false,preferred_error_message:'none',preset_date_condition:'ApplicationStartDate',preset_input_type:'text',preset_key_parameter_1:'none',preset_key_parameter_2:'none',preset_key_parameter_3:'none',preset_system_parameter:'none',preset_type:'none',reapply_same_template:false,relation_action_type:'show/hide',relation_key_operation:'equal',rule_agreement_condition:'ScrollAll',save_to_log:'none',spacing:0,string_join:false,text_align_on_canvas:'left',timestamp_format:'yyyyMMdd',timestamp_timing:'start',type:'text',width:300,x:200,y:200};
+// v39: PDFから新規テンプレートを起こすときのトップレベル雛形。実ファイル19本を横断調査し、
+//      全ファイル（または18/19）で共通だった値のみを採用。category/main_category は少数派なので持たない。
+//      id は空文字（カミレス側で採番される想定・利用者判断）。name/title/document_name は生成時にPDF名で埋める。
+//      ※ approval_master_name は利用者環境固有の値。別環境で使うときは要変更。
+const DEF_ROOT={apply_type:'Apply',approval_master_name:'デモ１',direct_linkable:true,display_order:1,document_name:'',enable_preset_access_key:false,export_version:'version 5.0',form_layouts:[],id:'',layout_editor:'advanced',linked_record_join:true,list_button_navigation:'-,docutizeform__InputData__c,standard__objectPage',name:'',not_accepting_new_application:false,not_accepting_ref_application:false,preferentially_use_form:'Layout Image Form',preferentially_use_guest_form:'Layout Image Form',public_status:'public',release_end_date:'2026-09-30T03:00:00.000Z',release_start_date:'2026-04-26T03:00:00.000Z',target_field_sections:[],title:'',title_display:'all',version:'1.0'};
+// form_layout のフォールバック（既存ページが1枚も無いとき用）。v21 の＋ページと v39 のPDF取込で共用。
+const DEF_LAYOUT={deselected_part_stroke_style:'#9AD09B',error_part_stroke_style:'#EA001E',line_width:3,selected_part_stroke_style:'#0F8C0A',package_version_at_import:'version 0.0',package_version_at_last_save:'version 5.0'};
 const allFP=new Set(),allTF=new Set(),allSN=new Set();
 let _c={fp:0,tf:0,sn:0};
-function mint(kind,pool){const pref=kind==='fp'?'a0G':kind==='tf'?'a0V':kind==='fl'?'a0E':kind==='img'?'068':'a0T';if(_c[kind]==null)_c[kind]=0;while(true){_c[kind]++;const base=pref+'Az00000'+String(_c[kind]).padStart(5,'0');const id=sfid(base);if(!pool.has(id)){pool.add(id);return id;}}}
+function mint(kind,pool){const pref=kind==='fp'?'a0G':kind==='tf'?'a0V':kind==='fl'?'a0E':kind==='img'?'068':kind==='tpl'?'a0H':'a0T';if(_c[kind]==null)_c[kind]=0;while(true){_c[kind]++;const base=pref+'Az00000'+String(_c[kind]).padStart(5,'0');const id=sfid(base);if(!pool.has(id)){pool.add(id);return id;}}}
 
 const L=()=>J.form_layouts[page];
 const pageSecs=()=>J.target_field_sections.filter(s=>(s.form_layout_number||1)===page+1).sort((a,b)=>(a.section_number||0)-(b.section_number||0));
@@ -312,19 +339,22 @@ function afterHist(){sel.clear();chain={sec:null,tf:null,fp:null};renderAll();up
 function updUndo(){$('undo').disabled=past.length<=1;$('redo').disabled=future.length===0;}
 
 // ---------- import / export ----------
-$('file').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;
-  J=JSON.parse(await f.text());allFP.clear();allTF.clear();allSN.clear();tplFP=tplTF=tplSN=null;_c={fp:0,tf:0,sn:0};
+// v39: 読み込み後の共通初期化（JSON読込 と PDFからの新規作成で共用）
+function initLoadedJson(){
+  allFP.clear();allTF.clear();allSN.clear();tplFP=tplTF=tplSN=null;_c={fp:0,tf:0,sn:0};
   if(!Array.isArray(J.form_layouts))J.form_layouts=[];if(!Array.isArray(J.target_field_sections))J.target_field_sections=[];// 空白JSON対策
   for(const fl of J.form_layouts){if(!Array.isArray(fl.form_parts))fl.form_parts=[];for(const p of fl.form_parts){allFP.add(p.id);if(!tplFP)tplFP=p;}}
   for(const s of J.target_field_sections){allSN.add(s.id);if(!tplSN)tplSN=s;for(const t of s.target_fields){allTF.add(t.id);if(!tplTF)tplTF=t;}}
   if(!tplFP)tplFP=DEF_FP;if(!tplTF)tplTF=DEF_TF;if(!tplSN)tplSN=DEF_SN;// 空白JSONでも新規作成できるよう既定テンプレで補完
-  page=0;sel.clear();chain={sec:null,tf:null,fp:null};tab='fp';collapsed.clear();lineCache={};treeMulti.clear();treeMultiKind=null;cmpBackup=null;$('revertCmp').disabled=true;past=[snap()];future=[];renderAll();updUndo();});
+  page=0;sel.clear();chain={sec:null,tf:null,fp:null};tab='fp';collapsed.clear();lineCache={};treeMulti.clear();treeMultiKind=null;cmpBackup=null;$('revertCmp').disabled=true;past=[snap()];future=[];renderAll();updUndo();}
+$('file').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;
+  J=JSON.parse(await f.text());initLoadedJson();});
 $('export').onclick=()=>{if(!J)return;const blob=new Blob([JSON.stringify(J)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(J.name||'export')+'_修正済.json';a.click();};
 
 // ---------- image size / delete (⑤) ----------
 function b64bytes(d){if(!d)return 0;const s=d.split(',').pop();return Math.floor(s.length*3/4);}
 function fmt(n){return n>1e6?(n/1e6).toFixed(2)+'MB':n>1e3?(n/1e3).toFixed(1)+'KB':n+'B';}
-function updImgSize(){if(!J){$('imgsize').textContent='画像: -';return;}const im=L().image;$('imgsize').textContent='画像: '+(im&&im.data?fmt(b64bytes(im.data)):'なし');}
+function updImgSize(){if(!J||!L()){$('imgsize').textContent='画像: -';return;}const im=L().image;$('imgsize').textContent='画像: '+(im&&im.data?fmt(b64bytes(im.data)):'なし');}
 $('imgDelete').onclick=()=>{if(!J)return;if(L().image===null){alert('既に画像なしです。');return;}if(!confirm('このページの背景画像を削除します（image=null・カミレス標準の削除）。容量が大きく下がり導入OK。環境で再添付してください。'))return;L().image=null;commit();renderPage();};
 $('imgPlaceholder').onclick=()=>{if(!J||!L().image){alert('このページに画像がありません。');return;}L().image.data=PLACEHOLDER;commit();renderPage();alert('背景画像を極小1x1画像に置換しました（純base64・寸法/id保持）。');};
 
@@ -345,26 +375,52 @@ $('imgUpload').onchange=e=>{const f=e.target.files[0];if(!f||!J){e.target.value=
 
 // ===== v9: PDF→ページ選択→背景化（pdf.js をインライン同梱・完全オフライン） =====
 pdfjsLib.GlobalWorkerOptions.workerSrc=URL.createObjectURL(new Blob([$('pdfWorkerSrc').textContent],{type:'application/javascript'}));
-let pdfDoc=null,pdfName='';
+let pdfDoc=null,pdfName='',pdfMode='single',pdfSel=[];// v39: pdfMode='single'(1ページ差し替え)/'multi'(複数ページ一括作成)、pdfSel=選択したページ番号を「選択順」で保持
 function dpiScale(){const dpi=clamp(+$('pdfDpi').value||150,72,300);return dpi/72;}// PDFのptは72dpi基準
-async function openPdfPicker(file){
-  $('pdfGrid').innerHTML='';$('pdfTitle').textContent='PDF: ページを選択（読み込み中…）';$('pdfModal').classList.add('show');
+async function openPdfPicker(file,mode){
+  pdfMode=mode||'single';pdfSel=[];
+  $('pdfGrid').innerHTML='';$('pdfTitle').textContent='PDF: ページを選択（読み込み中…）';
+  $('pdfFoot').classList.toggle('show',pdfMode==='multi');
+  $('pdfMsg').textContent=pdfMode==='multi'
+    ?'チェックした順に取り込みます（外して付け直すと最後尾に移動）。既定は全ページ・PDF順。解像度は高いほど鮮明・容量増（150dpi推奨）。'
+    :'背景にしたいページをクリックしてください。解像度を変えると再描画されます（高いほど鮮明・容量増。150dpi推奨）。';
+  $('pdfModal').classList.add('show');
   pdfName=file.name.replace(/\.pdf$/i,'');
   try{const buf=await file.arrayBuffer();
     pdfDoc=await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
-    $('pdfTitle').textContent='PDF: ページを選択（全'+pdfDoc.numPages+'ページ）';
+    $('pdfTitle').textContent=(pdfMode==='multi'?'PDF: 取り込むページを選択（全':'PDF: ページを選択（全')+pdfDoc.numPages+'ページ）';
+    if(pdfMode==='multi')for(let n=1;n<=pdfDoc.numPages;n++)pdfSel.push(n);// 既定＝全選択・PDF順
     await renderThumbs();
   }catch(err){$('pdfTitle').textContent='PDF読み込みエラー';alert('PDFを読み込めませんでした:\n'+err);closePdf();}
 }
+// 選択状態（枠の強調・順序バッジ・件数）を pdfSel から描き直す
+function refreshPdfSel(){
+  $('pdfGrid').querySelectorAll('.pdfThumb').forEach(cell=>{
+    const n=+cell.dataset.pn,idx=pdfSel.indexOf(n);
+    cell.classList.toggle('sel',idx>=0);
+    const b=cell.querySelector('.pdfOrder');if(b)b.textContent=idx>=0?(idx+1):'';
+    const c=cell.querySelector('.pchk');if(c)c.checked=idx>=0;
+  });
+  $('pdfCount').textContent=pdfSel.length?(pdfSel.length+' ページを選択中（取り込み順: '+pdfSel.join(' → ')+'）'):'未選択';
+  $('pdfImport').disabled=!pdfSel.length;
+}
+function togglePdfPage(n){const i=pdfSel.indexOf(n);if(i>=0)pdfSel.splice(i,1);else pdfSel.push(n);refreshPdfSel();}
 async function renderThumbs(){if(!pdfDoc)return;const grid=$('pdfGrid');grid.innerHTML='';
   for(let n=1;n<=pdfDoc.numPages;n++){
-    const cell=document.createElement('div');cell.className='pdfThumb';
+    const cell=document.createElement('div');cell.className='pdfThumb';cell.dataset.pn=n;
     const cv=document.createElement('canvas');const pn=document.createElement('div');pn.className='pn';pn.textContent='ページ '+n;
+    if(pdfMode==='multi'){
+      const chk=document.createElement('input');chk.type='checkbox';chk.className='pchk';
+      chk.onclick=ev=>{ev.stopPropagation();togglePdfPage(n);};
+      const badge=document.createElement('div');badge.className='pdfOrder';
+      cell.appendChild(chk);cell.appendChild(badge);
+    }
     cell.appendChild(cv);cell.appendChild(pn);grid.appendChild(cell);
-    cell.onclick=()=>pickPdfPage(n);
+    cell.onclick=()=>{if(pdfMode==='multi')togglePdfPage(n);else pickPdfPage(n);};
     const pg=await pdfDoc.getPage(n);const vp=pg.getViewport({scale:0.35});
     cv.width=vp.width;cv.height=vp.height;await pg.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
   }
+  if(pdfMode==='multi')refreshPdfSel();
 }
 async function pickPdfPage(n){if(!pdfDoc)return;$('pdfTitle').textContent='ページ'+n+' を描画中…';
   try{const pg=await pdfDoc.getPage(n);const vp=pg.getViewport({scale:dpiScale()});
@@ -375,10 +431,52 @@ async function pickPdfPage(n){if(!pdfDoc)return;$('pdfTitle').textContent='ペ�
     closePdf();
   }catch(err){alert('ページの描画に失敗しました:\n'+err);$('pdfTitle').textContent='PDF: ページを選択';}
 }
-function closePdf(){$('pdfModal').classList.remove('show');$('pdfGrid').innerHTML='';if(pdfDoc){pdfDoc.destroy?.();}pdfDoc=null;}
+function closePdf(){$('pdfModal').classList.remove('show');$('pdfGrid').innerHTML='';if(pdfDoc){pdfDoc.destroy?.();}pdfDoc=null;pdfSel=[];}
 $('pdfClose').onclick=closePdf;
 $('pdfModal').onclick=e=>{if(e.target===$('pdfModal'))closePdf();};
 $('pdfDpi').onchange=()=>{};// dpiはページ確定時に反映（再サムネ不要）
+// v39: PDFの選択ページを「空ページ（背景画像のみ）」として一括作成。JSON未読込なら DEF_ROOT で新規テンプレートを起こす
+$('pdfLoad').onchange=e=>{const f=e.target.files[0];if(!f)return;openPdfPicker(f,'multi');e.target.value='';};
+$('pdfImport').onclick=async()=>{
+  if(!pdfDoc||!pdfSel.length){alert('取り込むページを選択してください。');return;}
+  const order=pdfSel.slice(),dpiVal=clamp(+$('pdfDpi').value||150,72,300);
+  const isNew=!J;
+  $('pdfImport').disabled=true;
+  try{
+    if(isNew){// 新規テンプレート：内蔵の既定トップレベルから起こす
+      // v40: トップレベル id は必ず a0H（FormTemplate）の18桁で採番する。
+      //      空文字だとカミレス側が対象オブジェクトを判別できず
+      //      「Invalid conversion from runtime type ContentVersion to docutizeform__FormTemplate__c」で落ちる
+      //      （SalesforceはID接頭辞でオブジェクト種別を決める。068=ContentVersion=背景画像の実体）
+      J=clone(DEF_ROOT);J.id=mint('tpl',new Set());J.name=J.title=J.document_name=pdfName;initLoadedJson();}
+    const startIdx=J.form_layouts.length;
+    const flPool=new Set(J.form_layouts.map(f=>f.id).filter(Boolean));// ループ外で1回。mintが採番のたびpoolに足す
+    const imgPool=new Set(J.form_layouts.map(f=>f.image&&f.image.id).filter(Boolean));// 画像(ContentVersion)IDのプール
+    for(let k=0;k<order.length;k++){
+      const n=order[k];
+      $('pdfTitle').textContent='取り込み中… '+(k+1)+'/'+order.length+'（ページ'+n+'）';
+      const pg=await pdfDoc.getPage(n);const vp=pg.getViewport({scale:dpiScale()});
+      const cv=document.createElement('canvas');cv.width=Math.round(vp.width);cv.height=Math.round(vp.height);
+      await pg.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+      const b64=cv.toDataURL('image/png').split(',')[1];
+      const tpl=J.form_layouts[0];
+      const nfl=tpl?clone(tpl):clone(DEF_LAYOUT);
+      nfl.id=mint('fl',flPool);nfl.form_parts=[];nfl.layout_number=J.form_layouts.length+1;
+      const nm=pdfName+'_p'+n;
+      nfl.layout_title=nfl.name=nfl.form_template_name=nm;
+      // v41: image.id は必ずページごとに一意の068(ContentVersion)を採番する。
+      //      空文字のままだとカミレス側が全ページを同一ファイルとみなし、全ページが同じ背景になる不具合が出る。
+      //      （単ページ差し替えの applyBgImage は id:'' でも成立するが、複数ページ作成では成立しない。v13の整ページ挿入と同じ流儀に合わせる）
+      nfl.image={data:b64,width:cv.width,height:cv.height,dpi:96,id:mint('img',imgPool),path_on_client:nm+'.png',title:nm};
+      J.form_layouts.push(nfl);
+    }
+    const added=J.form_layouts.length-startIdx;
+    let bytes=0;for(let i=startIdx;i<J.form_layouts.length;i++)bytes+=b64bytes(J.form_layouts[i].image.data);
+    closePdf();
+    page=startIdx;sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;
+    commit();renderAll();
+    alert((isNew?'新規テンプレートを作成しました。\n':'')+added+' ページを追加しました（背景画像のみの空ページ）。\n画像合計 '+fmtKB(bytes)+(bytes>3*1024*1024?'\n※容量が大きめです。「背景圧縮」で削減できます。':''));
+  }catch(err){alert('取り込みに失敗しました:\n'+err);$('pdfImport').disabled=false;}};
 
 // ===== v11: 別フォームテンプレートから「セクション/項目を選んで」コピー =====
 let R=null,clip=null,refSecChks=[],refPageChks=[];// R=コピー元JSON（参照のみ）、clip=コピー済み選択
@@ -525,7 +623,7 @@ function pickAt(px,py){const g=imgData();if(!g)return;if(px<0||py<0||px>=g.W||py
 // ---------- render ----------
 function renderAll(){renderPages();renderPage();renderTree();renderPanel();updInfo();}
 function tplTotals(){const ns=J.target_field_sections.length;let ntf=0;J.target_field_sections.forEach(s=>ntf+=(s.target_fields||[]).length);let nfp=0;J.form_layouts.forEach(fl=>nfp+=(fl.form_parts||[]).length);return{ns,ntf,nfp};}
-function updInfo(){if(!J){$('info').textContent='—';return;}const t=tplTotals();$('info').textContent=`${J.name||''}（セクション${t.ns}・項目${t.ntf}・入力欄${t.nfp}） | ${pageName(L(),page)}（P${page+1}/${J.form_layouts.length}） | 枠 ${L().form_parts.length} | 選択 ${sel.size}`;}
+function updInfo(){if(!J){$('info').textContent='—';return;}if(!L()){$('info').textContent=(J.name||'')+'（ページなし）';return;}const t=tplTotals();$('info').textContent=`${J.name||''}（セクション${t.ns}・項目${t.ntf}・入力欄${t.nfp}） | ${pageName(L(),page)}（P${page+1}/${J.form_layouts.length}） | 枠 ${L().form_parts.length} | 選択 ${sel.size}`;}
 // ページ名 = layout_title（= name = form_template_name）。無ければ「ページN」
 function pageName(fl,i){return (fl&&(fl.layout_title||fl.name||fl.form_template_name))||('ページ'+(i+1));}
 // 改名時は一致していた3フィールドをまとめて更新（カミレスでは同値のため）
@@ -583,9 +681,11 @@ function reorderPages(fromIdx,toIdx){const arr=J.form_layouts;if(fromIdx<0||from
   arr.forEach((fl,i)=>{fl.layout_number=i+1;delete fl.__old;});
   page=arr.indexOf(curFl);if(page<0)page=Math.max(0,Math.min(arr.length-1,t));
   sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;commit();renderAll();}
-function renderPage(){if(!J)return;const fl=L(),img=$('bg'),svg=$('svg');const W=fl.image?.width||1607,H=fl.image?.height||2273;
+function renderPage(){if(!J)return;const fl=L(),img=$('bg'),svg=$('svg');
+  if(!fl){img.src='';svg.innerHTML='';$('stage').style.width='0px';updImgSize();return;}// v39: ページ0枚（PDF新規作成の途中・空JSON読込）でも落ちないように
+  const W=fl.image?.width||1607,H=fl.image?.height||2273;
   img.src=fl.image?.data?imgSrc(fl.image.data):'';$('stage').style.width=(W*scale)+'px';svg.setAttribute('viewBox',`0 0 ${W} ${H}`);drawParts();updImgSize();}
-function drawParts(){if(!J)return;const fl=L(),svg=$('svg');svg.innerHTML='';fl.form_parts.forEach((p,i)=>{if(p.width<=0||p.height<=0)return;
+function drawParts(){if(!J)return;const fl=L(),svg=$('svg');svg.innerHTML='';if(!fl)return;fl.form_parts.forEach((p,i)=>{if(p.width<=0||p.height<=0)return;
   const r=document.createElementNS(SVGNS,'rect');r.setAttribute('class','part'+(sel.has(p)?' sel':''));r.setAttribute('x',p.x);r.setAttribute('y',p.y);r.setAttribute('width',p.width);r.setAttribute('height',p.height);r.dataset.i=i;svg.appendChild(r);});
   if(autoRegion){const rr=document.createElementNS(SVGNS,'rect');rr.setAttribute('class','region');rr.setAttribute('x',autoRegion.x0);rr.setAttribute('y',autoRegion.y0);rr.setAttribute('width',autoRegion.x1-autoRegion.x0);rr.setAttribute('height',autoRegion.y1-autoRegion.y0);svg.appendChild(rr);}
   drawBBox();}
@@ -596,7 +696,7 @@ function drawBBox(){const svg=$('svg');svg.querySelectorAll('.bbox,.handle').for
 
 // ---------- tree ----------
 let selRowEl=null;
-function renderTree(scrollSel){const c=$('tree');c.innerHTML='';selRowEl=null;if(!J)return;const shown=new Set();
+function renderTree(scrollSel){const c=$('tree');c.innerHTML='';selRowEl=null;if(!J||!L())return;const shown=new Set();
   // v17: 「このページに物理的に枠があるセクション」を基準に構築。
   // section.form_layout_number は枠の物理ページと必ずしも一致しない（1つのセクションが複数ページに跨がる）ため、
   // 枠(form_part)の所在から逆引きする。加えて form_layout_number 上このページに属する（空の）セクションも表示。
@@ -821,7 +921,7 @@ $('addPage').onclick=()=>{if(!J)return;if(!Array.isArray(J.form_layouts))J.form_
   const num=J.form_layouts.length+1;
   const flPool=new Set(J.form_layouts.map(f=>f.id).filter(Boolean));
   const tpl=J.form_layouts[0];
-  const nfl=tpl?clone(tpl):{deselected_part_stroke_style:'#9AD09B',error_part_stroke_style:'#EA001E',line_width:3,selected_part_stroke_style:'#0F8C0A',package_version_at_import:'version 0.0',package_version_at_last_save:'version 5.0'};
+  const nfl=tpl?clone(tpl):clone(DEF_LAYOUT);
   nfl.id=mint('fl',flPool);nfl.form_parts=[];nfl.image=null;
   nfl.layout_number=num;nfl.layout_title=nfl.name=nfl.form_template_name='新規ページ'+num;
   J.form_layouts.push(nfl);
@@ -846,9 +946,26 @@ $('compress').onclick=()=>{if(!J)return;if(!L().image||!L().image.data){alert('�
 $('cmpCancel').onclick=()=>$('cmpModal').classList.remove('show');
 $('cmpModal').onclick=e=>{if(e.target===$('cmpModal'))$('cmpModal').classList.remove('show');};
 // 1ページ分を処理（Promise）。倍率が変わったら枠座標もスケール。before/after バイト数を返す
+// v38: Otsu法（画像自身のヒストグラムからクラス間分散最大の分割点を自動算出。しきい値を手で探さなくてよい）
+function otsuThreshold(hist,total){
+  let sum=0;for(let t=0;t<256;t++)sum+=t*hist[t];
+  let sumB=0,wB=0,maxVar=-1,thr=127;
+  for(let t=0;t<256;t++){
+    wB+=hist[t];if(wB===0)continue;
+    const wF=total-wB;if(wF===0)break;
+    sumB+=t*hist[t];
+    const mB=sumB/wB,mF=(sum-sumB)/wF,diff=mB-mF;
+    const varBetween=wB*wF*diff*diff;
+    if(varBetween>maxVar){maxVar=varBetween;thr=t;}
+  }
+  return thr;}
+const CMP_THR_DEFAULT={dist:60,luma:230};
 function compressPage(pi){return new Promise(res=>{
   const fl=J.form_layouts[pi];const im=fl&&fl.image;if(!im||!im.data){res(null);return;}
-  const resize=$('cmpResize').checked,maxW=Math.max(200,+$('cmpMaxW').value||1240),bin=$('cmpBin').checked,thr=Math.max(1,Math.min(254,+$('cmpThr').value||230));
+  const resize=$('cmpResize').checked,maxW=Math.max(200,+$('cmpMaxW').value||1240),bin=$('cmpBin').checked;
+  const metric=document.querySelector('input[name=cmpMetric]:checked').value;// 'dist'=色距離／'luma'=輝度
+  const auto=document.querySelector('input[name=cmpThrMode]:checked').value==='auto';
+  const manualThr=Math.max(1,Math.min(254,+$('cmpThr').value||CMP_THR_DEFAULT[metric]));
   const before=b64bytes(im.data);const img=new Image();
   // 変更前の原状態をメモリに退避（画像データ＋各枠の座標。参照で持つのでJには入らない）
   const backup={fl,data:im.data,width:im.width,height:im.height,parts:(fl.form_parts||[]).map(p=>({p,x:p.x,y:p.y,width:p.width,height:p.height}))};
@@ -857,12 +974,24 @@ function compressPage(pi){return new Promise(res=>{
     const nw=Math.max(1,Math.round(ow*scale)),nh=Math.max(1,Math.round(oh*scale));
     const cv=document.createElement('canvas');cv.width=nw;cv.height=nh;const ctx=cv.getContext('2d');
     ctx.imageSmoothingEnabled=true;ctx.drawImage(img,0,0,nw,nh);
-    if(bin){const d=ctx.getImageData(0,0,nw,nh),a=d.data;for(let i=0;i<a.length;i+=4){const g=a[i]*.299+a[i+1]*.587+a[i+2]*.114;const v=g<thr?0:255;a[i]=a[i+1]=a[i+2]=v;a[i+3]=255;}ctx.putImageData(d,0,0);}
+    if(bin){const d=ctx.getImageData(0,0,nw,nh),a=d.data;const n=a.length/4;
+      const vals=new Uint8ClampedArray(n),hist=new Uint32Array(256);
+      for(let p=0,i=0;p<n;p++,i+=4){
+        const v=(metric==='dist')?(255-Math.min(a[i],a[i+1],a[i+2])):Math.round(a[i]*.299+a[i+1]*.587+a[i+2]*.114);
+        vals[p]=v;hist[v]++;}
+      const thr=auto?otsuThreshold(hist,n):manualThr;
+      for(let p=0,i=0;p<n;p++,i+=4){
+        const black=(metric==='dist')?(vals[p]>=thr):(vals[p]<thr);
+        const v=black?0:255;a[i]=a[i+1]=a[i+2]=v;a[i+3]=255;}
+      ctx.putImageData(d,0,0);}
     const b64=cv.toDataURL('image/png').split(',')[1];
     im.data=b64;im.width=nw;im.height=nh;
     if(scale!==1){(fl.form_parts||[]).forEach(p=>{p.x=Math.round(p.x*scale);p.y=Math.round(p.y*scale);p.width=Math.round(p.width*scale);p.height=Math.round(p.height*scale);});}
     res({before,after:b64bytes(b64),scale,backup});};
   img.onerror=()=>res(null);img.src=imgSrc(im.data);});}
+// しきい値モード/判定方式のUI連動
+document.querySelectorAll('input[name=cmpThrMode]').forEach(r=>r.onchange=()=>{$('cmpThr').disabled=document.querySelector('input[name=cmpThrMode]:checked').value==='auto';});
+document.querySelectorAll('input[name=cmpMetric]').forEach(r=>r.onchange=()=>{$('cmpThr').value=CMP_THR_DEFAULT[document.querySelector('input[name=cmpMetric]:checked').value];});
 $('cmpRun').onclick=async()=>{
   const all=document.querySelector('input[name=cmpScope]:checked').value==='all';
   const targets=all?J.form_layouts.map((_,i)=>i):[page];
