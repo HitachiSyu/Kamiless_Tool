@@ -48,6 +48,10 @@
   .badge{display:inline-block;min-width:18px;text-align:center;font-size:10px;border-radius:3px;padding:0 3px;margin-right:2px;color:#fff;flex:none;}
   .b-sec{background:#7c3aed;} .b-tf{background:#0891b2;} .b-fp{background:#dc2626;}
   .lbl{overflow:hidden;text-overflow:ellipsis;}
+  /* v43: 対象項目の「保存先設定」状態を示す印（●=両方設定済み / ▲=片方だけ）。色だけに頼らず形も変える */
+  .tfmap{flex:none;font-size:10px;line-height:1;cursor:help;}
+  .tfmap.full{color:#16a34a;}
+  .tfmap.part{color:#f59e0b;}
   .children{margin-left:14px;}
   #stage{position:relative;margin:16px auto;box-shadow:0 2px 12px rgba(0,0,0,.2);background:#fff;}
   #stage img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none;}
@@ -160,6 +164,8 @@
     <button id="del" title="Delete">削除</button>
     <button id="cleanOrphans" title="未使用要素を一括削除：未関連枠→枠が無い空項目→項目が無い空セクションの順にまとめて掃除（枠のサイズ・位置は条件にしない）">未使用要素を掃除</button>
     <button id="nameToField" title="入力欄が1つだけ（1対1）の項目について、その入力欄名(part_name)を項目名(field_label)へ一括コピー（既存の項目名も上書き。入力欄名が空のものは対象外）">欄名→項目名</button>
+    <button id="setObjName" title="ツリーで選択中の対象項目（Ctrl+クリックで複数選択）に、保存先のオブジェクト名(object_name)をまとめて設定。空欄でOKすると設定を削除（キー自体を消す＝カミレスの未設定状態）。項目名(field_name)は各項目のパネルで個別に入力">保存先Obj一括</button>
+    <button id="clearSaveTarget" title="テンプレート全体の全対象項目から「保存先設定」(object_name / field_name)を一括削除（キー自体を消す＝カミレスの未設定状態）。Ctrl+Zで戻せます">保存先を全消去</button>
     <button id="renum" title="位置順に番号を振り直す">番号一括整列</button>
     <button id="alignX" title="選択中の入力欄を自動で「列」に分け、各列を最も左のXに揃える（1列だけ選べば全部同じXに。行列マトリクスもこれ1回で列整列）">列揃え(X)</button>
     <button id="alignY" title="選択中の入力欄を自動で「行」に分け、各行を最も上のYに揃える（1行だけ選べば全部同じYに。行列マトリクスもこれ1回で行整列）">行揃え(Y)</button>
@@ -335,7 +341,10 @@ function restore(s){const o=JSON.parse(s);o.L.forEach((fps,i)=>{J.form_layouts[i
 function commit(){future=[];past.push(snap());if(past.length>60)past.shift();updUndo();}
 function undo(){if(past.length>1){future.push(past.pop());restore(past[past.length-1]);afterHist();}}
 function redo(){if(future.length){const s=future.pop();past.push(s);restore(s);afterHist();}}
-function afterHist(){sel.clear();chain={sec:null,tf:null,fp:null};renderAll();updUndo();}
+// v42: treeMulti も必ずクリアする。restore() は target_field_sections を JSON.parse で作り直して差し替えるため、
+//      Undo/Redo 後の treeMulti は「失効した旧オブジェクト参照」を持ち続け、そのまま一括操作すると
+//      旧オブジェクトを書き換えるだけで J に反映されない（＝押しても何も起きない）サイレント失敗になる。
+function afterHist(){sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;renderAll();updUndo();}
 function updUndo(){$('undo').disabled=past.length<=1;$('redo').disabled=future.length===0;}
 
 // ---------- import / export ----------
@@ -727,6 +736,18 @@ function renderTree(scrollSel){const c=$('tree');c.innerHTML='';selRowEl=null;if
   $('treeToggle').textContent=_ac?'全展開':'全折畳';// 次に押したときの動作を表示
 }
 function key(kind,o){return kind+':'+(o.id||o.name);}
+// v43: 対象項目の保存先設定(object_name/field_name)の状態を示す印を作る。未設定なら null（印を出さない）
+function mapMark(t){
+  const o=t.object_name,f=t.field_name;
+  if(!o&&!f)return null;
+  const full=!!(o&&f),sp=document.createElement('span');
+  sp.className='tfmap '+(full?'full':'part');
+  sp.textContent=full?'●':'▲';
+  sp.title=full?('保存先: '+o+' → '+f)
+    :(o?('保存先（未完成）: オブジェクト '+o+' ／ 項目名が未入力')
+       :('保存先（未完成）: 項目名 '+f+' ／ オブジェクト名が未入力'));
+  return sp;
+}
 function mkRow(kind,o,num,label,hasChildren){
   const row=document.createElement('div');row.className='row';row._node={kind,o};
   if((kind==='fp'&&sel.has(o))||(chain[kind]===o&&tab===kind)){row.classList.add('sel');selRowEl=row;}
@@ -736,7 +757,9 @@ function mkRow(kind,o,num,label,hasChildren){
   tw.onclick=ev=>{ev.stopPropagation();if(hasChildren){const k=key(kind,o);collapsed.has(k)?collapsed.delete(k):collapsed.add(k);renderTree();}};
   const bd=document.createElement('span');bd.className='badge b-'+kind;bd.textContent=(num??'?');
   const lb=document.createElement('span');lb.className='lbl';lb.textContent=label;
-  row.appendChild(tw);row.appendChild(bd);row.appendChild(lb);
+  row.appendChild(tw);row.appendChild(bd);
+  if(kind==='tf'){const mk=mapMark(o);if(mk)row.appendChild(mk);}// v43: 保存先設定の印（番号の直後＝縦に並んで見つけやすい位置）
+  row.appendChild(lb);
   row.onmousedown=e=>{if(e.button!==0)return;treeDown={kind,o,row,x:e.clientX,y:e.clientY,ctrl:e.ctrlKey||e.metaKey};};
   return row;
 }
@@ -820,6 +843,18 @@ function frow(label,value,onchg,type='text',opts){const d=document.createElement
   else if(type==='checkbox'){el=document.createElement('input');el.type='checkbox';el.checked=value===true;el.style.flex='none';el.style.width='auto';el.style.marginRight='auto';el.onchange=()=>onchg(el.checked);}
   else{el=document.createElement('input');if(type==='number')el.type='number';el.value=value??'';el.onchange=()=>onchg(type==='number'?Math.round(+el.value||0):el.value);}
   d.appendChild(el);return d;}
+// v42: 「項目の保存先設定」(object_name / field_name) の設定・解除。
+//      カミレスは【未設定を「キーが存在しない」で表現する】（空文字ではない。実機diffで確認済み）。
+//      よって空にしたら delete する。空文字を残すと未設定として扱われない恐れがあるため必ずここを通す。
+function setSaveTarget(t,key,v){const s=String(v==null?'':v).trim();
+  if(!s){delete t[key];return;}
+  const isNew=!(key in t);t[key]=s;
+  // カミレスの出力は各オブジェクトのキーがアルファベット順（実データ684オブジェクト中、対象項目は全て順序通り）。
+  // 新規キーは末尾に付いてしまうため、その場で並べ替えて本家の出力と完全に一致させる（diff時のノイズ防止）。
+  // ※オブジェクトは作り直さず「その場で」並べ替える。chain/treeMulti/sel が参照を保持しているため差し替え不可。
+  if(isNew){const ks=Object.keys(t).sort(),tmp={};ks.forEach(k=>{tmp[k]=t[k];delete t[k];});ks.forEach(k=>{t[k]=tmp[k];});}}
+// テンプレート全体の全対象項目を走査（保存先設定の集計・一括解除用）
+function eachTf(fn){J.target_field_sections.forEach(s=>(s.target_fields||[]).forEach(t=>fn(t,s)));}
 function roEl(label,value){const d=document.createElement('div');d.className='frow';d.innerHTML=`<label>${label}</label><span class="muted" style="flex:1;word-break:break-all">${value}</span>`;return d;}
 function renderPanel(){const box=$('panel');box.innerHTML='';if(!J){box.innerHTML='<p class="muted">JSONを読み込んでください</p>';return;}
   if(tab==='sec'){const s=chain.sec;if(!s){box.innerHTML='<p class="muted">セクションを選択</p>';return;}
@@ -832,6 +867,9 @@ function renderPanel(){const box=$('panel');box.innerHTML='';if(!J){box.innerHTM
     box.appendChild(frow('項目',t.field_label,v=>{t.field_label=v;commit();renderTree();}));
     box.appendChild(frow('型',t.field_type,v=>{t.field_type=v;commit();},'select',['text','date','number','picklist','checkbox','radio','file','formula']));
     box.appendChild(frow('必須',t.required===true,v=>{t.required=v;commit();},'checkbox'));
+    // v42: 項目の保存先設定（空欄にするとキー自体を削除＝カミレスの未設定状態）
+    box.appendChild(frow('保存先Obj',t.object_name,v=>{setSaveTarget(t,'object_name',v);commit();renderTree();}));
+    box.appendChild(frow('保存先項目',t.field_name,v=>{setSaveTarget(t,'field_name',v);commit();renderTree();}));
     box.appendChild(roEl('id',t.id));box.appendChild(roEl('入力欄数',fpsOfTf(t.id).length));
   } else {const p=chain.fp;
     if(sel.size>1){const b=bboxOf(sel);box.innerHTML=`<p><b>${sel.size}個 選択中</b></p><p class="muted">まとめて移動・拡縮・コピー(Ctrl+C)できます。<br>範囲 x:${Math.round(b.x0)}–${Math.round(b.x1)} y:${Math.round(b.y0)}–${Math.round(b.y1)}</p>`;return;}
@@ -1088,6 +1126,35 @@ $('nameToField').onclick=()=>{if(!J)return;
   if(!n){alert('対象がありませんでした。\n（入力欄が1つだけ・入力欄名ありの項目が対象です）');return;}
   commit();renderAll();
   alert(n+' 件の項目名を、入力欄名からコピーしました。');};
+// v42: 選択中の対象項目に、保存先オブジェクト名(object_name)を一括設定（空欄なら削除）。
+//      対象の取り方は $('del') / doCopy() と同じ「treeMulti優先→単一選択」パターン。
+$('setObjName').onclick=()=>{if(!J)return;
+  let tfs=null;
+  if(treeMultiKind==='tf'&&treeMulti.size)tfs=[...treeMulti].sort((a,b)=>(a.field_number||0)-(b.field_number||0));
+  else if(tab==='tf'&&chain.tf)tfs=[chain.tf];
+  if(!tfs||!tfs.length){alert('対象項目を選択してください。\n（左のツリーで項目をクリック、Ctrl+クリックで複数選択）');return;}
+  const cur=tfs.map(t=>t.object_name).find(v=>v)||'';
+  const v=prompt('選択中の '+tfs.length+' 件の項目に、保存先オブジェクト名を一括設定します。\n（空欄のままOKすると、その項目のオブジェクト名を削除します）',cur);
+  if(v===null)return;// キャンセル
+  tfs.forEach(t=>setSaveTarget(t,'object_name',v));
+  commit();renderAll();
+  const s=String(v).trim();
+  if(!s){alert(tfs.length+' 件のオブジェクト名を削除しました。');return;}
+  const lack=tfs.filter(t=>!t.field_name).length;
+  alert(tfs.length+' 件にオブジェクト名「'+s+'」を設定しました。'
+    +(lack?('\n\n※このうち '+lack+' 件は項目名(field_name)が未入力です。\n各項目を選び、パネルの「保存先項目」に入力してください。'):''));};
+// v42: テンプレート全体の全対象項目から保存先設定を一括削除（キー自体を消す＝未設定状態）
+$('clearSaveTarget').onclick=()=>{if(!J)return;
+  let n=0,both=0,partial=0;
+  eachTf(t=>{const ho='object_name' in t,hf='field_name' in t;if(ho||hf){n++;if(ho&&hf)both++;else partial++;}});
+  if(!n){alert('保存先設定のある項目はありませんでした。');return;}
+  if(!confirm('テンプレート全体の '+n+' 件の項目から「保存先設定」を削除します。\n'
+    +'（object_name / field_name のキー自体を削除＝カミレスの未設定状態）\n\n'
+    +'・両方設定済み: '+both+' 件\n・片方だけ: '+partial+' 件\n\n'
+    +'よろしいですか？（Ctrl+Zで戻せます）'))return;
+  eachTf(t=>{delete t.object_name;delete t.field_name;});
+  commit();renderAll();
+  alert(n+' 件の保存先設定を削除しました。');};
 // v23: 未使用要素の一括掃除（未関連枠 → 空項目 → 空セクション を級联判定）
 $('cleanOrphans').onclick=()=>{if(!J)return;
   const tfIds=new Set();J.target_field_sections.forEach(s=>(s.target_fields||[]).forEach(t=>tfIds.add(t.id)));
