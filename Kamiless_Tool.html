@@ -54,7 +54,11 @@
   .tfmap.part{color:#f59e0b;}
   .children{margin-left:14px;}
   #stage{position:relative;margin:16px auto;box-shadow:0 2px 12px rgba(0,0,0,.2);background:#fff;}
-  #stage img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none;}
+  /* v47: 背景の外に出た枠も見せるためビューを広げることがあるので、背景画像は
+     stage 全面ではなく renderPage() が算出した位置・サイズに絶対配置する */
+  #stage img{position:absolute;display:block;user-select:none;-webkit-user-drag:none;}
+  /* v47: 背景画像の範囲を示す破線（どこまでが紙面かを分かるようにする） */
+  rect.bgedge{fill:none;stroke:#94a3b8;stroke-dasharray:8 5;stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none;}
   #svg{position:absolute;inset:0;width:100%;height:100%;}
   rect.part{fill:rgba(220,0,0,.10);stroke:#dc2626;stroke-width:2;vector-effect:non-scaling-stroke;cursor:move;}
   rect.part.sel{fill:rgba(37,99,235,.18);stroke:#2563eb;}
@@ -325,12 +329,21 @@ let _c={fp:0,tf:0,sn:0};
 function mint(kind,pool){const pref=kind==='fp'?'a0G':kind==='tf'?'a0V':kind==='fl'?'a0E':kind==='img'?'068':kind==='tpl'?'a0H':'a0T';if(_c[kind]==null)_c[kind]=0;while(true){_c[kind]++;const base=pref+'Az00000'+String(_c[kind]).padStart(5,'0');const id=sfid(base);if(!pool.has(id)){pool.add(id);return id;}}}
 
 const L=()=>J.form_layouts[page];
-const pageSecs=()=>J.target_field_sections.filter(s=>(s.form_layout_number||1)===page+1).sort((a,b)=>(a.section_number||0)-(b.section_number||0));
+// v44: セクション番号の「兄弟集合」＝ 同じ form_layout_number を持つセクション群（番号の親は所属ページ）。
+//      pageSecs() は「今開いているページ」基準。セクションの所属ページは配下の枠が物理的に載っているページと
+//      一致しないことがある（v17参照）ため、番号の操作に pageSecs() を使うと対象が集合に入らず、
+//      indexOf が -1 になって黙って失敗する。番号を触る処理は必ず secsOfLayout / renumSec を使うこと。
+const secsOfLayout=n=>J.target_field_sections.filter(s=>(s.form_layout_number||1)===n).sort((a,b)=>(a.section_number||0)-(b.section_number||0));
+const pageSecs=()=>secsOfLayout(page+1);
+function renumSec(n){secsOfLayout(n).forEach((s,i)=>s.section_number=i+1);}
 const tfsOf=sec=>sec.target_fields.slice().sort((a,b)=>(a.field_number||0)-(b.field_number||0));
 const fpsOfTf=tfid=>L().form_parts.filter(fp=>fp.target_field===tfid).sort((a,b)=>(a.part_order||0)-(b.part_order||0)||a.y-b.y);
 function findTf(id){for(const s of J.target_field_sections)for(const t of s.target_fields)if(t.id===id)return t;return null;}
 function secOfTf(id){for(const s of J.target_field_sections)for(const t of s.target_fields)if(t.id===id)return s;return null;}
-function imgSrc(d){return d.startsWith('data:')?d:('data:image/png;base64,'+d.split(',').pop());}
+// v47: 旧実装は d.split(',').pop() を使っていたが、base64 にカンマは無いので
+//      「2.7MBの文字列を丸ごと配列にコピーして元に戻すだけ」の完全な無駄だった。
+//      indexOf は文字列をコピーしないので、カンマが実在するときだけ slice する。
+function imgSrc(d){if(d.startsWith('data:'))return d;const i=d.indexOf(',');return 'data:image/png;base64,'+(i>=0?d.slice(i+1):d);}
 function renumTf(sec){tfsOf(sec).forEach((t,i)=>t.field_number=i+1);}
 function renumFp(tfid){fpsOfTf(tfid).forEach((p,i)=>p.part_order=i+1);}
 
@@ -356,8 +369,14 @@ function initLoadedJson(){
   for(const s of J.target_field_sections){allSN.add(s.id);if(!tplSN)tplSN=s;for(const t of s.target_fields){allTF.add(t.id);if(!tplTF)tplTF=t;}}
   if(!tplFP)tplFP=DEF_FP;if(!tplTF)tplTF=DEF_TF;if(!tplSN)tplSN=DEF_SN;// 空白JSONでも新規作成できるよう既定テンプレで補完
   page=0;sel.clear();chain={sec:null,tf:null,fp:null};tab='fp';collapsed.clear();lineCache={};treeMulti.clear();treeMultiKind=null;cmpBackup=null;$('revertCmp').disabled=true;past=[snap()];future=[];renderAll();updUndo();}
+// v47: 大きいJSON（画像base64込みで数MB）はブラウザの読み込み・パース自体に時間がかかり、
+//      その間ずっと無反応で「固まった」ように見えていた。処理を速くはできないので、
+//      重い処理に入る前に表示を更新し、1フレーム描画の隙を与えて「待っている」ことを見せる。
+const yieldPaint=()=>new Promise(r=>requestAnimationFrame(()=>setTimeout(r,0)));
 $('file').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;
-  J=JSON.parse(await f.text());initLoadedJson();});
+  $('info').textContent='JSONを読み込み中…（'+Math.round(f.size/104857.6)/10+'MB）';await yieldPaint();
+  try{J=JSON.parse(await f.text());}catch(err){alert('JSONを読み込めません:\n'+err);updInfo();e.target.value='';return;}
+  initLoadedJson();e.target.value='';});
 $('export').onclick=()=>{if(!J)return;const blob=new Blob([JSON.stringify(J)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(J.name||'export')+'_修正済.json';a.click();};
 
 // ---------- image size / delete (⑤) ----------
@@ -489,9 +508,39 @@ $('pdfImport').onclick=async()=>{
 
 // ===== v11: 別フォームテンプレートから「セクション/項目を選んで」コピー =====
 let R=null,clip=null,refSecChks=[],refPageChks=[];// R=コピー元JSON（参照のみ）、clip=コピー済み選択
+// v46: 参照(コピー元)側も「そのページに物理的に枠があるセクション」基準にする。
+//      section.form_layout_number は枠の物理ページと一致しないことがあるため（v17と同じ理由）、
+//      枠(form_part)→target_field→section で逆引きする。加えて所属上このページで、かつ
+//      どこにも枠が無い空セクションも表示する（v16でセクション0ページを飛ばさなくした方針を維持）。
+//      ※ form_layout_number で引くと secs と parts の基準がズレ、「入力欄0」になり枠がコピーされない。
+const refPartsOf=p=>{const fl=R.form_layouts[p];return (fl&&Array.isArray(fl.form_parts))?fl.form_parts:[];};
+// v47: 「どこかに枠がある項目」の集合は R 全体で1つなので、Rを読み込んだ時点で1回だけ作る。
+//      v46 では refSecsOfPage を呼ぶたび（＝ページごと）に作り直していた。
+let refAllBox=null,refFpCount=null;
+function refBuildCache(){refAllBox=new Set();refFpCount=new Map();
+  R.form_layouts.forEach(fl=>(fl.form_parts||[]).forEach(fp=>{refAllBox.add(fp.target_field);
+    refFpCount.set(fp.target_field,(refFpCount.get(fp.target_field)||0)+1);}));}
+function refSecsOfPage(p){
+  const here=new Set(refPartsOf(p).map(fp=>fp.target_field));
+  if(!refAllBox)refBuildCache();
+  const allBox=refAllBox;
+  return R.target_field_sections.filter(sec=>{
+      const nominal=(sec.form_layout_number||1)===p+1;
+      const hasHere=(sec.target_fields||[]).some(tf=>here.has(tf.id));
+      const emptyEverywhere=(sec.target_fields||[]).every(tf=>!allBox.has(tf.id));
+      return hasHere||(nominal&&emptyEverywhere);})
+    .slice().sort((a,b)=>((a.form_layout_number||0)-(b.form_layout_number||0))||((a.section_number||0)-(b.section_number||0)));}
+// そのセクションの枠が全ページ合計で何個あるか（跨ぎセクションの注記用）
+function refTotalFp(sec){if(!refFpCount)refBuildCache();let n=0;// v47: 事前集計を引くだけ（旧: セクションごとに全枠を走査）
+  (sec.target_fields||[]).forEach(t=>{n+=refFpCount.get(t.id)||0;});return n;}
 $('refFile').onchange=async e=>{const f=e.target.files[0];if(!f){return;}
-  try{R=JSON.parse(await f.text());}catch(err){alert('コピー元のJSONを読み込めません:\n'+err);e.target.value='';return;}
+  // v47: こちらも読み込み中を見せる（モーダルを先に開いて「読み込み中…」を出す）
+  $('refList').innerHTML='';$('refCount').textContent='';
+  $('refTitle').textContent='コピー元を読み込み中…（'+Math.round(f.size/104857.6)/10+'MB）';
+  $('refModal').classList.add('show');await yieldPaint();
+  try{R=JSON.parse(await f.text());}catch(err){$('refModal').classList.remove('show');alert('コピー元のJSONを読み込めません:\n'+err);e.target.value='';return;}
   if(!Array.isArray(R.form_layouts))R.form_layouts=[];if(!Array.isArray(R.target_field_sections))R.target_field_sections=[];
+  refAllBox=null;refFpCount=null;// v47: コピー元が変わったのでキャッシュを捨てる
   openRef();e.target.value='';};
 function refUpdCount(){let ns=0,nt=0,np=0;refPageChks.forEach(pc=>{if(pc.checked)np++;});
   refSecChks.forEach(sc=>{if(sc.disabled)return;if(sc.checked)ns++;else sc._tfChks.forEach(tc=>{if(tc.checked)nt++;});});
@@ -499,7 +548,7 @@ function refUpdCount(){let ns=0,nt=0,np=0;refPageChks.forEach(pc=>{if(pc.checked
   $('refCount').textContent=t.length?t.join('・')+'を選択中':'未選択';}
 function openRef(){if(!R)return;const list=$('refList');list.innerHTML='';refSecChks=[];refPageChks=[];
   R.form_layouts.forEach((fl,p)=>{
-    const secs=R.target_field_sections.filter(s=>(s.form_layout_number||1)===p+1).slice().sort((a,b)=>(a.section_number||0)-(b.section_number||0));
+    const secs=refSecsOfPage(p);// v46: 枠の物理ページから逆引き（parts と基準を揃える）
     const parts=Array.isArray(fl.form_parts)?fl.form_parts:[];// v16: セクション0のページ（背景+枠のみ）も飛ばさず表示する
     const pg=document.createElement('div');pg.className='refPg';
     const ph=document.createElement('label');ph.className='pgh';ph.style.cursor='pointer';
@@ -516,7 +565,10 @@ function openRef(){if(!R)return;const list=$('refList');list.innerHTML='';refSec
       const tfs=(sec.target_fields||[]).slice().sort((a,b)=>(a.field_number||0)-(b.field_number||0));
       let nfp=0;tfs.forEach(t=>{nfp+=parts.filter(fp=>fp.target_field===t.id).length;});
       lbl.textContent=(sec.section_label||sec.name||'(無名)')+'  ';
-      const sm=document.createElement('span');sm.className='refSmall';sm.textContent='項目'+tfs.length+'・入力欄'+nfp;lbl.appendChild(sm);
+      // v46: 枠が複数ページに散っているセクションは、このページ分だけがコピー対象になるので注記する
+      const totalFp=refTotalFp(sec);
+      const sm=document.createElement('span');sm.className='refSmall';
+      sm.textContent='項目'+tfs.length+'・入力欄'+nfp+(totalFp>nfp?'（他ページにも'+(totalFp-nfp)+'枠）':'');lbl.appendChild(sm);
       sh.appendChild(tw);sh.appendChild(sChk);sh.appendChild(lbl);secDiv.appendChild(sh);
       const fldsDiv=document.createElement('div');fldsDiv.className='refFlds';
       tfs.forEach(tf=>{const fr=document.createElement('label');fr.className='refFld';
@@ -541,7 +593,7 @@ $('refModal').onclick=e=>{if(e.target===$('refModal'))$('refModal').classList.re
 // ページを丸ごと採取（form_layout メタ＝背景画像ごと ＋ 配下セクション/項目/入力欄）
 function buildWholePage(p){const fl=R.form_layouts[p];const parts=Array.isArray(fl.form_parts)?fl.form_parts:[];
   const flMeta=clone(fl);delete flMeta.form_parts;// image 等その他フィールドは保全
-  const secs=R.target_field_sections.filter(s=>(s.form_layout_number||1)===p+1).slice().sort((a,b)=>(a.section_number||0)-(b.section_number||0));
+  const secs=refSecsOfPage(p);// v46: 同上。ここがズレていると全枠が orphans（target_field:''）になってしまう
   const used=new Set();
   const sections=secs.map(sec=>{const tfs=(sec.target_fields||[]).slice().sort((a,b)=>(a.field_number||0)-(b.field_number||0)).map(tf=>{
       const fps=parts.filter(fp=>fp.target_field===tf.id).sort((a,b)=>(a.part_order||0)-(b.part_order||0));fps.forEach(f=>used.add(f));return{tf:clone(tf),fps:fps.map(clone)};});
@@ -690,11 +742,38 @@ function reorderPages(fromIdx,toIdx){const arr=J.form_layouts;if(fromIdx<0||from
   arr.forEach((fl,i)=>{fl.layout_number=i+1;delete fl.__old;});
   page=arr.indexOf(curFl);if(page<0)page=Math.max(0,Math.min(arr.length-1,t));
   sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;commit();renderAll();}
-function renderPage(){if(!J)return;const fl=L(),img=$('bg'),svg=$('svg');
-  if(!fl){img.src='';svg.innerHTML='';$('stage').style.width='0px';updImgSize();return;}// v39: ページ0枚（PDF新規作成の途中・空JSON読込）でも落ちないように
+// v47: そのページの「表示領域」。背景の外に出た枠も見えるように、はみ出しがある場合だけビューを広げる。
+//      はみ出しが無ければ従来どおり 0,0,W,H を返す（表示は一切変わらない＝回帰ゼロ）。
+function viewOf(fl){
   const W=fl.image?.width||1607,H=fl.image?.height||2273;
-  img.src=fl.image?.data?imgSrc(fl.image.data):'';$('stage').style.width=(W*scale)+'px';svg.setAttribute('viewBox',`0 0 ${W} ${H}`);drawParts();updImgSize();}
-function drawParts(){if(!J)return;const fl=L(),svg=$('svg');svg.innerHTML='';if(!fl)return;fl.form_parts.forEach((p,i)=>{if(p.width<=0||p.height<=0)return;
+  let x0=0,y0=0,x1=W,y1=H;
+  (fl.form_parts||[]).forEach(p=>{if(p.width<=0||p.height<=0)return;
+    if(p.x<x0)x0=p.x;if(p.y<y0)y0=p.y;
+    if(p.x+p.width>x1)x1=p.x+p.width;if(p.y+p.height>y1)y1=p.y+p.height;});
+  if(x0===0&&y0===0&&x1===W&&y1===H)return{x:0,y:0,w:W,h:H,W,H};// はみ出し無し＝従来と同じ
+  // x:9999 のようなゴミ座標でビューが破綻しないよう、拡張量は背景サイズの1倍までに制限する
+  x0=Math.max(x0,-W);y0=Math.max(y0,-H);x1=Math.min(x1,W*2);y1=Math.min(y1,H*2);
+  const PAD=Math.max(40,Math.round(Math.min(W,H)*0.03));
+  return{x:x0-PAD,y:y0-PAD,w:(x1-x0)+PAD*2,h:(y1-y0)+PAD*2,W,H};}
+function renderPage(){if(!J)return;const fl=L(),img=$('bg'),svg=$('svg');
+  if(!fl){img.src='';img.dataset.key='';svg.innerHTML='';$('stage').style.width='0px';$('stage').style.height='';updImgSize();return;}// v39: ページ0枚（PDF新規作成の途中・空JSON読込）でも落ちないように
+  const v=viewOf(fl);
+  // v47: img.src は「画像が変わったときだけ」入れ直す。毎回入れ直すとブラウザが巨大PNGを
+  //      そのたびに再デコードするため、ズームやページ再描画が重くなっていた。
+  const data=fl.image?.data||'';const key=data?(page+':'+data.length+':'+data.slice(0,32)):'';
+  if(img.dataset.key!==key){img.src=data?imgSrc(data):'';img.dataset.key=key;}
+  // 背景画像を viewBox 内の正しい位置・サイズに置く（はみ出しが無ければ従来どおり全面）
+  img.style.left=((0-v.x)/v.w*100)+'%';img.style.top=((0-v.y)/v.h*100)+'%';
+  img.style.width=(v.W/v.w*100)+'%';img.style.height=(v.H/v.h*100)+'%';
+  $('stage').style.width=(v.w*scale)+'px';$('stage').style.height=(v.h*scale)+'px';
+  svg.setAttribute('viewBox',`${v.x} ${v.y} ${v.w} ${v.h}`);drawParts();updImgSize();}
+function drawParts(){if(!J)return;const fl=L(),svg=$('svg');svg.innerHTML='';if(!fl)return;
+  // v47: ビューが背景より広がっているときだけ、背景画像の境界を破線で敷く（枠より下）
+  {const v=viewOf(fl);
+   if(v.x!==0||v.y!==0||v.w!==v.W||v.h!==v.H){
+     const b=document.createElementNS(SVGNS,'rect');b.setAttribute('class','bgedge');
+     b.setAttribute('x',0);b.setAttribute('y',0);b.setAttribute('width',v.W);b.setAttribute('height',v.H);svg.appendChild(b);}}
+  fl.form_parts.forEach((p,i)=>{if(p.width<=0||p.height<=0)return;
   const r=document.createElementNS(SVGNS,'rect');r.setAttribute('class','part'+(sel.has(p)?' sel':''));r.setAttribute('x',p.x);r.setAttribute('y',p.y);r.setAttribute('width',p.width);r.setAttribute('height',p.height);r.dataset.i=i;svg.appendChild(r);});
   if(autoRegion){const rr=document.createElementNS(SVGNS,'rect');rr.setAttribute('class','region');rr.setAttribute('x',autoRegion.x0);rr.setAttribute('y',autoRegion.y0);rr.setAttribute('width',autoRegion.x1-autoRegion.x0);rr.setAttribute('height',autoRegion.y1-autoRegion.y0);svg.appendChild(rr);}
   drawBBox();}
@@ -855,18 +934,59 @@ function setSaveTarget(t,key,v){const s=String(v==null?'':v).trim();
   if(isNew){const ks=Object.keys(t).sort(),tmp={};ks.forEach(k=>{tmp[k]=t[k];delete t[k];});ks.forEach(k=>{t[k]=tmp[k];});}}
 // テンプレート全体の全対象項目を走査（保存先設定の集計・一括解除用）
 function eachTf(fn){J.target_field_sections.forEach(s=>(s.target_fields||[]).forEach(t=>fn(t,s)));}
+// v45: 複数選択中の対象項目に対する「一括チェックボックス」。
+//      全部ON→チェック / 全部OFF→空 / 混在→indeterminate（半チェック）で「揃っていない」ことが分かる。
+//      クリックすると選択中の全項目へ同じ値を書き込む（混在・OFF から押すと ON、ON から押すと OFF）。
+//      ※対象キー（required / not_drawing_border / not_drawing_value）は false でも必ず存在する「常在キー」なので
+//        単純代入でよい。object_name のような「疎キー」（未設定＝キー無し）とは扱いが違う点に注意。
+function bchk(label,tfs,key){
+  const on=tfs.filter(t=>t[key]===true).length;
+  const d=document.createElement('div');d.className='frow';d.innerHTML=`<label>${label}</label>`;
+  const el=document.createElement('input');el.type='checkbox';
+  el.style.flex='none';el.style.width='auto';el.style.marginRight='6px';
+  el.checked=(on===tfs.length);el.indeterminate=(on>0&&on<tfs.length);
+  el.onchange=()=>{const v=el.checked;tfs.forEach(t=>t[key]=v);commit();renderPanel();};
+  const cnt=document.createElement('span');cnt.className='muted';cnt.style.fontSize='11px';
+  cnt.textContent=on+' / '+tfs.length+' が ON';
+  d.appendChild(el);d.appendChild(cnt);return d;}
 function roEl(label,value){const d=document.createElement('div');d.className='frow';d.innerHTML=`<label>${label}</label><span class="muted" style="flex:1;word-break:break-all">${value}</span>`;return d;}
 function renderPanel(){const box=$('panel');box.innerHTML='';if(!J){box.innerHTML='<p class="muted">JSONを読み込んでください</p>';return;}
   if(tab==='sec'){const s=chain.sec;if(!s){box.innerHTML='<p class="muted">セクションを選択</p>';return;}
     box.appendChild(frow('セクション番号',s.section_number,v=>reorder('sec',s,v),'number'));
     box.appendChild(frow('ラベル',s.section_label,v=>{s.section_label=v;commit();renderTree();}));
-    box.appendChild(roEl('id',s.id));box.appendChild(roEl('ページ',s.form_layout_number));
+    box.appendChild(roEl('id',s.id));
+    // v44: 所属ページ（番号の親）が今表示しているページと違うときは明示する。
+    //      ツリーは「枠の物理ページ」で並べるため両者はズレ得る（v17）。番号は所属ページのグループ内で並ぶ。
+    {const nom=s.form_layout_number||1;
+     box.appendChild(roEl('ページ',nom===page+1?String(nom)
+       :String(nom)+' <b style="color:#b45309">⚠ 枠は第'+(page+1)+'ページに表示中。番号は第'+nom+'ページのグループ内で並びます</b>'));}
     box.appendChild(roEl('項目数',s.target_fields.length));
-  } else if(tab==='tf'){const t=chain.tf;if(!t){box.innerHTML='<p class="muted">対象項目を選択</p>';return;}
+  } else if(tab==='tf'){
+    // v45: ツリーで対象項目を2つ以上選んでいるときは「一括設定パネル」にする（1個だけなら従来の単一パネル）
+    const multi=(treeMultiKind==='tf'&&treeMulti.size>1)
+      ?[...treeMulti].sort((a,b)=>(a.field_number||0)-(b.field_number||0)):null;
+    if(multi){
+      const names=multi.map(t=>t.field_label||t.name||'(無名)');
+      const head=document.createElement('p');head.innerHTML='<b>'+multi.length+'個 選択中</b>';box.appendChild(head);
+      const lst=document.createElement('p');lst.className='muted';lst.style.wordBreak='break-all';
+      lst.textContent=names.slice(0,5).join('、')+(names.length>5?(' 他'+(names.length-5)+'件'):'');
+      box.appendChild(lst);
+      const note=document.createElement('p');note.className='muted';
+      note.innerHTML='下のチェックは<b>選択中の全項目にまとめて適用</b>されます（半チェック＝揃っていない）。<br>保存先の一括設定はツールバーの「保存先Obj一括」から。';
+      box.appendChild(note);
+      box.appendChild(bchk('必須',multi,'required'));
+      box.appendChild(bchk('枠線の非描画',multi,'not_drawing_border'));
+      box.appendChild(bchk('値の非描画',multi,'not_drawing_value'));
+      return;
+    }
+    const t=chain.tf;if(!t){box.innerHTML='<p class="muted">対象項目を選択</p>';return;}
     box.appendChild(frow('項目番号',t.field_number,v=>reorder('tf',t,v),'number'));
     box.appendChild(frow('項目',t.field_label,v=>{t.field_label=v;commit();renderTree();}));
     box.appendChild(frow('型',t.field_type,v=>{t.field_type=v;commit();},'select',['text','date','number','picklist','checkbox','radio','file','formula']));
     box.appendChild(frow('必須',t.required===true,v=>{t.required=v;commit();},'checkbox'));
+    // v45: 表示設定（カミレス画面の「対象項目 ▸ 表示設定」）。常在キーなので単純代入でよい
+    box.appendChild(frow('枠線の非描画',t.not_drawing_border===true,v=>{t.not_drawing_border=v;commit();},'checkbox'));
+    box.appendChild(frow('値の非描画',t.not_drawing_value===true,v=>{t.not_drawing_value=v;commit();},'checkbox'));
     // v42: 項目の保存先設定（空欄にするとキー自体を削除＝カミレスの未設定状態）
     box.appendChild(frow('保存先Obj',t.object_name,v=>{setSaveTarget(t,'object_name',v);commit();renderTree();}));
     box.appendChild(frow('保存先項目',t.field_name,v=>{setSaveTarget(t,'field_name',v);commit();renderTree();}));
@@ -884,13 +1004,13 @@ function renderPanel(){const box=$('panel');box.innerHTML='';if(!J){box.innerHTM
 
 // ---------- number reorder ----------
 function reorder(kind,obj,newNum){let list,setNum;
-  if(kind==='sec'){list=pageSecs();setNum=(o,n)=>o.section_number=n;}
+  if(kind==='sec'){list=secsOfLayout(obj.form_layout_number||1);setNum=(o,n)=>o.section_number=n;}// v44: 表示ページではなく「自身の所属ページ」のグループで並べる
   else if(kind==='tf'){list=tfsOf(secOfTf(obj.id));setNum=(o,n)=>o.field_number=n;}
   else{list=fpsOfTf(obj.target_field);setNum=(o,n)=>o.part_order=n;}
   const cur=list.indexOf(obj);if(cur<0)return;const n=clamp(newNum,1,list.length);
   list.splice(cur,1);list.splice(n-1,0,obj);list.forEach((o,i)=>setNum(o,i+1));commit();renderTree();renderPanel();}
 function moveBefore(kind,src,dst){let list,setNum;
-  if(kind==='sec'){list=pageSecs();setNum=(o,n)=>o.section_number=n;}
+  if(kind==='sec'){if((src.form_layout_number||1)!==(dst.form_layout_number||1))return;list=secsOfLayout(src.form_layout_number||1);setNum=(o,n)=>o.section_number=n;}// v44: 所属ページが違うセクション同士は並べ替えない（tf分岐と同じ流儀）
   else if(kind==='tf'){if(secOfTf(src.id)!==secOfTf(dst.id))return;list=tfsOf(secOfTf(src.id));setNum=(o,n)=>o.field_number=n;}
   else{if(src.target_field!==dst.target_field)return;list=fpsOfTf(src.target_field);setNum=(o,n)=>o.part_order=n;}
   const si=list.indexOf(src),di=list.indexOf(dst);if(si<0||di<0)return;list.splice(si,1);list.splice(di,0,src);list.forEach((o,i)=>setNum(o,i+1));}
@@ -919,7 +1039,7 @@ $('alignH').onclick=()=>clusterApply('y','height');  // 行内高揃え：y で�
 
 // ---------- canvas interaction ----------
 function svgPt(evt){const svg=$('svg');const pt=svg.createSVGPoint();pt.x=evt.clientX;pt.y=evt.clientY;return pt.matrixTransform(svg.getScreenCTM().inverse());}
-let drag=null;
+let drag=null,nudgeTimer=null;// v47: nudgeTimer=方向キー移動のcommitデバウンス用
 $('svg').addEventListener('mousedown',e=>{if(!J)return;const fl=L();const p0=svgPt(e);const t=e.target;
   if(picking){pickAt(p0.x|0,p0.y|0);picking=false;$('pick').textContent='スポイト';return;}
   if(regionMode){drag={mode:'region',start:p0};return;}
@@ -944,8 +1064,8 @@ window.addEventListener('mousemove',e=>{if(!drag)return;const p=svgPt(e);let dx=
     const sx=(nx1-nx0)/W||1,sy=(ny1-ny0)/H||1;drag.orig.forEach(o=>{o.p.x=Math.round(nx0+(o.x-b.x0)*sx);o.p.y=Math.round(ny0+(o.y-b.y0)*sy);o.p.width=Math.max(4,Math.round(o.w*sx));o.p.height=Math.max(4,Math.round(o.h*sy));});drawParts();
   } else if(drag.mode==='marquee'){svg.querySelector('.marquee')?.remove();const m=document.createElementNS(SVGNS,'rect');m.setAttribute('class','marquee');m.setAttribute('x',Math.min(p.x,drag.start.x));m.setAttribute('y',Math.min(p.y,drag.start.y));m.setAttribute('width',Math.abs(dx));m.setAttribute('height',Math.abs(dy));svg.appendChild(m);}
   else if(drag.mode==='region'){svg.querySelector('.regionprev')?.remove();const m=document.createElementNS(SVGNS,'rect');m.setAttribute('class','region regionprev');m.setAttribute('x',Math.min(p.x,drag.start.x));m.setAttribute('y',Math.min(p.y,drag.start.y));m.setAttribute('width',Math.abs(dx));m.setAttribute('height',Math.abs(dy));svg.appendChild(m);}});
-function gV(x){const H=L().image?.height||2273;const l=document.createElementNS(SVGNS,'line');l.setAttribute('class','guide');l.setAttribute('x1',x);l.setAttribute('y1',0);l.setAttribute('x2',x);l.setAttribute('y2',H);$('svg').appendChild(l);}
-function gH(y){const W=L().image?.width||1607;const l=document.createElementNS(SVGNS,'line');l.setAttribute('class','guide');l.setAttribute('x1',0);l.setAttribute('y1',y);l.setAttribute('x2',W);l.setAttribute('y2',y);$('svg').appendChild(l);}
+function gV(x){const v=viewOf(L());const l=document.createElementNS(SVGNS,'line');l.setAttribute('class','guide');l.setAttribute('x1',x);l.setAttribute('y1',v.y);l.setAttribute('x2',x);l.setAttribute('y2',v.y+v.h);$('svg').appendChild(l);}// v47: ガイド線も表示領域いっぱいに伸ばす
+function gH(y){const v=viewOf(L());const l=document.createElementNS(SVGNS,'line');l.setAttribute('class','guide');l.setAttribute('x1',v.x);l.setAttribute('y1',y);l.setAttribute('x2',v.x+v.w);l.setAttribute('y2',y);$('svg').appendChild(l);}// v47: 同上
 window.addEventListener('mouseup',e=>{if(!drag)return;const mode=drag.mode;
   if(mode==='marquee'){const p=svgPt(e);const x0=Math.min(p.x,drag.start.x),y0=Math.min(p.y,drag.start.y),x1=Math.max(p.x,drag.start.x),y1=Math.max(p.y,drag.start.y);
     L().form_parts.forEach(pp=>{if(pp.width>0&&pp.x>=x0&&pp.y>=y0&&pp.x+pp.width<=x1&&pp.y+pp.height<=y1)sel.add(pp);});syncChainFromSel();}
@@ -1188,9 +1308,10 @@ $('del').onclick=()=>{if(!J)return;
   if(treeMultiKind==='sec'&&treeMulti.size){const secs=[...treeMulti];const ids=new Set();let tfn=0;secs.forEach(s=>{(s.target_fields||[]).forEach(t=>ids.add(t.id));tfn+=(s.target_fields||[]).length;});
     const fpn=L().form_parts.filter(p=>ids.has(p.target_field)).length;
     if(!confirm('セクション'+secs.length+'個（項目'+tfn+'・入力欄'+fpn+'）をまとめて削除します。よろしいですか？'))return;
+    const lays=new Set(secs.map(s=>s.form_layout_number||1));// v44: 削除したセクションの所属ページごとに振り直す（表示ページ基準では欠番が残る）
     L().form_parts=L().form_parts.filter(p=>!ids.has(p.target_field));
     J.target_field_sections=J.target_field_sections.filter(s=>!treeMulti.has(s));
-    pageSecs().forEach((s,i)=>s.section_number=i+1);
+    lays.forEach(renumSec);
   } else if(treeMultiKind==='tf'&&treeMulti.size){const tfs=[...treeMulti];const ids=new Set(tfs.map(t=>t.id));
     const fpn=L().form_parts.filter(p=>ids.has(p.target_field)).length;
     if(!confirm('項目'+tfs.length+'個（入力欄'+fpn+'）をまとめて削除します。よろしいですか？'))return;
@@ -1199,9 +1320,10 @@ $('del').onclick=()=>{if(!J)return;
     touched.forEach(sec=>renumTf(sec));
   } else if(tab==='sec'&&chain.sec){const sec=chain.sec;const tfn=sec.target_fields.length;const tfids=new Set(sec.target_fields.map(t=>t.id));const fpn=L().form_parts.filter(p=>tfids.has(p.target_field)).length;
     if(!confirm(`セクション「${sec.section_label||sec.name}」と配下の 項目${tfn}個・入力欄${fpn}個 を削除します。よろしいですか？`))return;
+    const lay=sec.form_layout_number||1;// v44: 表示ページではなく、消したセクションの所属ページを振り直す
     L().form_parts=L().form_parts.filter(p=>!tfids.has(p.target_field));
     J.target_field_sections=J.target_field_sections.filter(s=>s!==sec);
-    pageSecs().forEach((s,i)=>s.section_number=i+1);
+    renumSec(lay);
   } else if(tab==='tf'&&chain.tf){const tf=chain.tf,sec=secOfTf(tf.id);const fpn=L().form_parts.filter(p=>p.target_field===tf.id).length;
     if(!confirm(`対象項目「${tf.field_label}」と 入力欄${fpn}個 を削除します。よろしいですか？`))return;
     L().form_parts=L().form_parts.filter(p=>p.target_field!==tf.id);
@@ -1273,7 +1395,18 @@ window.addEventListener('keydown',e=>{if(!J)return;const k=e.key.toLowerCase();c
   if((e.ctrlKey||e.metaKey)&&k==='c'){if(!inInput){e.preventDefault();doCopy();}return;}
   if((e.ctrlKey||e.metaKey)&&k==='v'){if(!inInput){e.preventDefault();doPaste(e.shiftKey);}return;}
   if((e.ctrlKey||e.metaKey)&&k==='a'){if(!inInput){e.preventDefault();sel=new Set(L().form_parts.filter(p=>p.width>0&&p.height>0));treeMulti.clear();treeMultiKind=null;tab='fp';chain={sec:null,tf:null,fp:null};syncChainFromSel();drawParts();renderTree();renderPanel();updInfo();}return;}
-  if(k==='delete'&&!inInput){$('del').click();}});
+  if(k==='delete'&&!inInput){$('del').click();return;}
+  // v47: 選択中の枠を方向キーで移動（1px / Shift+10px）。背景の外に出た枠の微調整用。
+  //      連打で Undo 履歴が溢れないよう、commit() は動きが止まってから1回だけ（デバウンス）。
+  if(!inInput&&(k==='arrowleft'||k==='arrowright'||k==='arrowup'||k==='arrowdown')){
+    if(!sel.size)return;e.preventDefault();
+    const d=e.shiftKey?10:1;
+    const dx=k==='arrowleft'?-d:k==='arrowright'?d:0,dy=k==='arrowup'?-d:k==='arrowdown'?d:0;
+    sel.forEach(p=>{p.x+=dx;p.y+=dy;});
+    drawParts();updInfo();renderPanel();
+    clearTimeout(nudgeTimer);nudgeTimer=setTimeout(()=>{nudgeTimer=null;commit();},400);
+    return;}
+});
 // v19: 左右パネルの幅をドラッグで調整
 function initSplit(id,varName,side){const el=$(id);if(!el)return;
   el.addEventListener('mousedown',e=>{e.preventDefault();const app=$('app'),startX=e.clientX;
