@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>カミレス JSON ビジュアルエディタ v25</title>
+<title>カミレス JSON ビジュアルエディタ v49</title>
 <style>
   *{box-sizing:border-box;}
   html,body{margin:0;height:100%;font-family:"Meiryo","Segoe UI",sans-serif;font-size:13px;color:#1f2937;}
@@ -52,6 +52,11 @@
   .tfmap{flex:none;font-size:10px;line-height:1;cursor:help;}
   .tfmap.full{color:#16a34a;}
   .tfmap.part{color:#f59e0b;}
+  /* v49: 入力欄の種別印（選択リスト系のみ） */
+  .fptype{flex:none;font-size:9px;line-height:1.4;padding:0 3px;border-radius:3px;color:#fff;cursor:help;}
+  .fptype.t-picklist{background:#7c3aed;}
+  .fptype.t-multipicklist{background:#db2777;}
+  .fptype.t-radio{background:#0891b2;}
   .children{margin-left:14px;}
   #stage{position:relative;margin:16px auto;box-shadow:0 2px 12px rgba(0,0,0,.2);background:#fff;}
   /* v47: 背景の外に出た枠も見せるためビューを広げることがあるので、背景画像は
@@ -75,6 +80,11 @@
   .frow label{width:78px;color:#6b7280;flex:none;}
   .frow input,.frow select{flex:1;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;width:100%;}
   .muted{color:#9ca3af;font-size:11px;}
+  /* v48: 複数選択した入力欄の欄名一覧（多いときはスクロール） */
+  .namelist{margin:2px 0 6px;max-height:180px;overflow:auto;font-size:11px;color:#374151;line-height:1.55;
+            background:#f9fafb;border:1px solid #e5e7eb;border-radius:4px;padding:4px 6px;}
+  .namelist div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .namelist .nn{color:#9ca3af;}
   /* v9: PDFページ選択モーダル */
   #pdfModal{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9000;display:none;align-items:center;justify-content:center;}
   #pdfModal.show{display:flex;}
@@ -827,6 +837,14 @@ function mapMark(t){
        :('保存先（未完成）: 項目名 '+f+' ／ オブジェクト名が未入力'));
   return sp;
 }
+// v49: 入力欄の種別印。選択リスト系だけに付ける（checkbox は実データ49160件あり、印を付けるとツリーが埋まる）
+const FP_TYPE_MARK={picklist:['選','選択リスト'],multipicklist:['多選','複数選択リスト'],radio:['ラジオ','ラジオボタン']};
+function typeMark(p){
+  const m=FP_TYPE_MARK[p.type];if(!m)return null;
+  const n=parseOpts(p.options_label_and_values||'').length;
+  const sp=document.createElement('span');sp.className='fptype t-'+p.type;sp.textContent=m[0];
+  sp.title=m[1]+(n?'（選択肢'+n+'件）':'（選択肢なし）');
+  return sp;}
 function mkRow(kind,o,num,label,hasChildren){
   const row=document.createElement('div');row.className='row';row._node={kind,o};
   if((kind==='fp'&&sel.has(o))||(chain[kind]===o&&tab===kind)){row.classList.add('sel');selRowEl=row;}
@@ -838,6 +856,7 @@ function mkRow(kind,o,num,label,hasChildren){
   const lb=document.createElement('span');lb.className='lbl';lb.textContent=label;
   row.appendChild(tw);row.appendChild(bd);
   if(kind==='tf'){const mk=mapMark(o);if(mk)row.appendChild(mk);}// v43: 保存先設定の印（番号の直後＝縦に並んで見つけやすい位置）
+  if(kind==='fp'){const tm=typeMark(o);if(tm)row.appendChild(tm);}// v49: 選択リスト系の種別印
   row.appendChild(lb);
   row.onmousedown=e=>{if(e.button!==0)return;treeDown={kind,o,row,x:e.clientX,y:e.clientY,ctrl:e.ctrlKey||e.metaKey};};
   return row;
@@ -949,6 +968,74 @@ function bchk(label,tfs,key){
   const cnt=document.createElement('span');cnt.className='muted';cnt.style.fontSize='11px';
   cnt.textContent=on+' / '+tfs.length+' が ON';
   d.appendChild(el);d.appendChild(cnt);return d;}
+// v48: 空文字を除いた最長共通接頭辞。1件だけならその名前、該当なしなら ''。
+//      空の part_name も実在するため必ず除外して算出する（1つ空が混ざるだけで '' になってしまうのを防ぐ）。
+function commonPrefix(names){
+  const a=names.filter(s=>s);
+  if(!a.length)return '';
+  let p=a[0];
+  for(let i=1;i<a.length;i++){const s=a[i];
+    while(p&&!s.startsWith(p))p=p.slice(0,-1);
+    if(!p)break;}
+  return p;}
+// v48: 「入力＋実行ボタン」の行。累積する操作（先頭に追加など）は frow の onchange では
+//      フォーカスを外すだけで発火して誤爆するので、ボタン/Enter で明示実行させる。
+function actRow(label,placeholder,btnText,onDo){
+  const d=document.createElement('div');d.className='frow';d.innerHTML=`<label>${label}</label>`;
+  const el=document.createElement('input');el.type='text';if(placeholder)el.placeholder=placeholder;
+  const b=document.createElement('button');b.textContent=btnText;b.style.flex='none';b.style.marginLeft='4px';
+  b.onclick=()=>{const v=el.value;if(!v)return;el.value='';onDo(v);};// 実行後は空に（二重適用の防止）
+  el.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();b.click();}};
+  d.appendChild(el);d.appendChild(b);return d;}
+// ===== v49: 選択肢（options_label_and_values）の解析・生成 =====
+// カミレスの選択肢文字列には2形式ある（実データ2655項目で確認）：
+//   ① 「ラベル:値」カンマ区切り … 2568項目。うち910項目は ラベル≠値（例 ラベル1:Ⅰ / ラベル1:Ⅱ）。
+//      先頭や末尾に空項目（":" や 空文字）が入ることがあり、これは「未選択」用と思われるので必ず保持する。
+//   ② 「{{ラベル}}」カンマ区切り … 87項目。全項目が例外なく {{}} で包まれ、中に : も , も含まない
+//      （＝エスケープ機構ではなく「ラベルだけを並べる新形式」。明細セクションを持つ新しいファイルにのみ出現）。
+// 同一ファイル内に両形式が混在する＝カミレスはどちらも読める。ただし往復保全のため、
+// 編集されない限り元の文字列には一切触らない（書き戻すのは textarea が変更されたときだけ）。
+const OPT_BRACE=/^\{\{.*\}\}$/;
+function optsFormat(s){const t=String(s||'').trim();if(!t)return 'empty';
+  return t.split(',').every(x=>OPT_BRACE.test(x.trim()))?'brace':'pair';}
+function parseOpts(s){const t=String(s||'');if(!t)return [];
+  const brace=optsFormat(t)==='brace';
+  return t.split(',').map(x=>{
+    if(brace){const m=x.trim().match(/^\{\{(.*)\}\}$/);return{label:m?m[1]:x.trim(),value:null};}
+    const i=x.indexOf(':');// 値に : が含まれることがあるので split(':') は使わない
+    // 空項目には「":"」と「空文字（末尾カンマ由来）」の2通りの書き方が実在するので、
+    // どちらだったかを bare で覚えておき、生成時にそのまま復元する（＝バイト等価を保つ）。
+    return i<0?{label:x,value:'',bare:true}:{label:x.slice(0,i),value:x.slice(i+1)};});}
+// value が全て null（＝値が指定されていない）なら {{}} 形式、1つでも値があれば ラベル:値 形式で出す。
+// → 元が {{}} で値を足さなければ {{}} のまま。値を入れたときだけ ラベル:値 に移行する。
+function buildOpts(items){
+  if(!items.length)return '';
+  return items.every(it=>it.value===null)
+    ? items.map(it=>'{{'+it.label+'}}').join(',')
+    : items.map(it=>{const v=(it.value===null?it.label:it.value);
+        // 空項目は元の書き方を復元（bare=":"無しの空文字。それ以外の空項目は ":"）
+        if(it.label===''&&v==='')return it.bare?'':':';
+        return it.label+':'+v;}).join(',');}
+// 1行1項目のテキストへ／から。値がラベルと違うときだけ "ラベル:値" と書く（{{}}形式は値なしなのでラベルだけ）
+function optsToText(items){return items.map(it=>{
+  // 空項目は元の書き方（空行 or ":"）を保つ。テキスト上でも区別しないと往復で書き方が変わってしまう
+  if(it.label===''&&(it.value===''||it.value===null))return it.bare?'':':';
+  return (it.value===null||it.value===it.label)?it.label:(it.label+':'+it.value);}).join('\n');}
+function textToOpts(txt,braceMode){
+  return String(txt).split('\n').map(line=>{
+    const i=line.indexOf(':');
+    // 値の記載なし：{{}}形式なら値なし、そうでなければラベルと同値。bare=":"を書かなかった印
+    if(i<0)return{label:line,value:braceMode?null:line,bare:true};
+    return{label:line.slice(0,i),value:line.slice(i+1)};});}
+// v49: 複数行入力の行（選択肢エディタ用）。確定はフォーカスを外すか Ctrl+Enter。
+function taRow(label,value,rows,onchg){
+  const d=document.createElement('div');d.className='frow';d.style.alignItems='flex-start';
+  d.innerHTML=`<label>${label}</label>`;
+  const el=document.createElement('textarea');el.value=value;el.rows=rows||6;
+  el.style.flex='1';el.style.fontSize='11px';el.style.lineHeight='1.5';el.style.resize='vertical';
+  el.onchange=()=>onchg(el.value);
+  el.onkeydown=e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();el.blur();}};
+  d.appendChild(el);return d;}
 function roEl(label,value){const d=document.createElement('div');d.className='frow';d.innerHTML=`<label>${label}</label><span class="muted" style="flex:1;word-break:break-all">${value}</span>`;return d;}
 function renderPanel(){const box=$('panel');box.innerHTML='';if(!J){box.innerHTML='<p class="muted">JSONを読み込んでください</p>';return;}
   if(tab==='sec'){const s=chain.sec;if(!s){box.innerHTML='<p class="muted">セクションを選択</p>';return;}
@@ -982,7 +1069,7 @@ function renderPanel(){const box=$('panel');box.innerHTML='';if(!J){box.innerHTM
     const t=chain.tf;if(!t){box.innerHTML='<p class="muted">対象項目を選択</p>';return;}
     box.appendChild(frow('項目番号',t.field_number,v=>reorder('tf',t,v),'number'));
     box.appendChild(frow('項目',t.field_label,v=>{t.field_label=v;commit();renderTree();}));
-    box.appendChild(frow('型',t.field_type,v=>{t.field_type=v;commit();},'select',['text','date','number','picklist','checkbox','radio','file','formula']));
+    box.appendChild(frow('型',t.field_type,v=>{t.field_type=v;commit();},'select',['text','date','number','picklist','multipicklist','checkbox','radio','file','formula']));// v49: multipicklist を追加（無いと該当枠の型が text に見えてしまう）
     box.appendChild(frow('必須',t.required===true,v=>{t.required=v;commit();},'checkbox'));
     // v45: 表示設定（カミレス画面の「対象項目 ▸ 表示設定」）。常在キーなので単純代入でよい
     box.appendChild(frow('枠線の非描画',t.not_drawing_border===true,v=>{t.not_drawing_border=v;commit();},'checkbox'));
@@ -992,11 +1079,60 @@ function renderPanel(){const box=$('panel');box.innerHTML='';if(!J){box.innerHTM
     box.appendChild(frow('保存先項目',t.field_name,v=>{setSaveTarget(t,'field_name',v);commit();renderTree();}));
     box.appendChild(roEl('id',t.id));box.appendChild(roEl('入力欄数',fpsOfTf(t.id).length));
   } else {const p=chain.fp;
-    if(sel.size>1){const b=bboxOf(sel);box.innerHTML=`<p><b>${sel.size}個 選択中</b></p><p class="muted">まとめて移動・拡縮・コピー(Ctrl+C)できます。<br>範囲 x:${Math.round(b.x0)}–${Math.round(b.x1)} y:${Math.round(b.y0)}–${Math.round(b.y1)}</p>`;return;}
+    if(sel.size>1){const b=bboxOf(sel);
+      box.innerHTML=`<p><b>${sel.size}個 選択中</b></p><p class="muted">まとめて移動・拡縮・コピー(Ctrl+C)できます。<br>範囲 x:${Math.round(b.x0)}–${Math.round(b.x1)} y:${Math.round(b.y0)}–${Math.round(b.y1)}</p>`;
+      // v48: 欄名の一括変更。位置順（上→下・左→右）に並べ、共通の先頭を出す
+      const fps=[...sel].sort((p,q)=>(p.y-q.y)||(p.x-q.x));
+      const pre=commonPrefix(fps.map(p=>p.part_name||''));
+      const hit=pre?fps.filter(p=>(p.part_name||'').startsWith(pre)).length:0;
+      if(pre){
+        box.appendChild(frow('共通の先頭',pre,v=>{
+          fps.forEach(p=>{const n=p.part_name||'';if(n.startsWith(pre))p.part_name=v+n.slice(pre.length);});
+          commit();renderTree();renderPanel();}));
+        const m=document.createElement('p');m.className='muted';
+        m.innerHTML='上を書き換えると、この先頭で始まる <b>'+hit+' 件</b>の欄名がまとめて変わります（空にすると先頭を削除）。';
+        box.appendChild(m);
+      } else {
+        const m=document.createElement('p');m.className='muted';
+        m.textContent='共通する先頭部分がありません。名前が似ている枠だけを選び直すと「共通の先頭」を書き換えられます。';
+        box.appendChild(m);
+      }
+      // 共通の先頭が無くても使える：全部の欄名の頭に付け足す
+      box.appendChild(actRow('先頭に追加','付け足す文字','追加',v=>{
+        fps.forEach(p=>{p.part_name=v+(p.part_name||'');});
+        commit();renderTree();renderPanel();}));
+      // 選択中の欄名一覧（多いときは省略。なぜその共通接頭辞になったかを確認できるように）
+      const LIM=12;
+      const h4=document.createElement('div');h4.className='muted';h4.style.marginTop='6px';
+      h4.textContent='選択中の欄名（'+fps.length+'件）';box.appendChild(h4);
+      const list=document.createElement('div');list.className='namelist';
+      fps.slice(0,LIM).forEach(p=>{const r=document.createElement('div');
+        if(p.part_name){r.textContent=p.part_name;}else{r.className='nn';r.textContent='(無名)';}
+        list.appendChild(r);});
+      if(fps.length>LIM){const r=document.createElement('div');r.className='nn';r.textContent='… 他 '+(fps.length-LIM)+' 件';list.appendChild(r);}
+      box.appendChild(list);
+      return;}
     if(!p){box.innerHTML='<p class="muted">入力欄を選択</p>';return;}
     box.appendChild(frow('入力欄番号',p.part_order,v=>reorder('fp',p,v),'number'));
     box.appendChild(frow('欄名',p.part_name,v=>{p.part_name=v;commit();renderTree();}));
-    box.appendChild(frow('型',p.type,v=>{p.type=v;commit();},'select',['text','date','number','picklist','checkbox','radio','file','formula']));
+    box.appendChild(frow('型',p.type,v=>{p.type=v;commit();},'select',['text','date','number','picklist','multipicklist','checkbox','radio','file','formula']));// v49: multipicklist を追加（無いと該当枠の型が text に見えてしまう）
+    // v49: 選択肢の表示・編集（選択リスト/複数選択リスト/ラジオ、または選択肢データを持つ枠）
+    if(p.options_label_and_values||['picklist','multipicklist','radio'].includes(p.type)){
+      const raw=p.options_label_and_values||'';
+      const fmt=optsFormat(raw),items=parseOpts(raw),brace=(fmt==='brace');
+      const hd=document.createElement('div');hd.className='muted';hd.style.marginTop='6px';
+      hd.textContent='選択肢（'+items.length+'件）'+(fmt==='empty'?'（未設定）':fmt==='brace'?'／{{ラベル}}形式':'／ラベル:値形式');
+      box.appendChild(hd);
+      box.appendChild(taRow('選択肢',optsToText(items),Math.min(12,Math.max(4,items.length)),v=>{
+        p.options_label_and_values=buildOpts(textToOpts(v,brace));
+        commit();renderTree();renderPanel();}));
+      const hint=document.createElement('p');hint.className='muted';
+      hint.innerHTML='1行に1項目。<b>ラベル:値</b> と書くと値を分けられます。'
+        +(brace?'値を書かなければ現在の <b>{{ラベル}}形式</b> のまま保存します（値を書くと ラベル:値 形式に変わります）。'
+               :'値を書かない行はラベルと同じ値になります。')
+        +'<br>変更は入力欄からフォーカスを外すか Ctrl+Enter で確定。';
+      box.appendChild(hint);
+    }
     ['x','y','width','height'].forEach(k=>box.appendChild(frow(k,p[k],v=>{p[k]=v;drawParts();commit();updInfo();},'number')));
     const tf=findTf(p.target_field);box.appendChild(roEl('対象項目',tf?tf.field_label:'(未割当)'));box.appendChild(roEl('id',p.id));
   }
@@ -1389,7 +1525,7 @@ $('center').addEventListener('wheel',e=>{
   c.scrollLeft=cx*r-ox;c.scrollTop=cy*r-oy;// カーソル下の点を固定
 },{passive:false});
 $('undo').onclick=undo;$('redo').onclick=redo;
-window.addEventListener('keydown',e=>{if(!J)return;const k=e.key.toLowerCase();const inInput=document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='SELECT';
+window.addEventListener('keydown',e=>{if(!J)return;const k=e.key.toLowerCase();const inInput=document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='SELECT'||document.activeElement.tagName==='TEXTAREA';// v49: TEXTAREA を追加。選択肢の複数行入力中に方向キーで枠が動いたり Delete で枠が消えるのを防ぐ
   if((e.ctrlKey||e.metaKey)&&k==='z'){e.preventDefault();e.shiftKey?redo():undo();return;}
   if((e.ctrlKey||e.metaKey)&&k==='y'){e.preventDefault();redo();return;}
   if((e.ctrlKey||e.metaKey)&&k==='c'){if(!inInput){e.preventDefault();doCopy();}return;}
