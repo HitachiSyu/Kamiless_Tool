@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>カミレス JSON ビジュアルエディタ v49</title>
+<title>カミレス JSON ビジュアルエディタ v50</title>
 <style>
   *{box-sizing:border-box;}
   html,body{margin:0;height:100%;font-family:"Meiryo","Segoe UI",sans-serif;font-size:13px;color:#1f2937;}
@@ -146,6 +146,41 @@
   .refFlds.open{display:block;}
   .refFld{display:flex;align-items:center;gap:6px;font-size:12px;color:#374151;padding:2px 0;}
   .refSmall{color:#9ca3af;font-size:11px;}
+  /* v50: 検索・一括変更パネル（背景を覆わない浮動パネル＝キャンバスを見ながら操作できる） */
+  #bulkPanel{position:fixed;top:48px;right:14px;width:380px;max-height:calc(100vh - 64px);background:#fff;border:1px solid #d1d5db;border-radius:10px;box-shadow:0 10px 32px rgba(0,0,0,.28);z-index:8000;display:none;flex-direction:column;font-size:12px;color:#374151;}
+  #bulkPanel.show{display:flex;}
+  #bulkHead{padding:8px 12px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:8px;}
+  #bulkHead h3{margin:0;font-size:14px;flex:1;}
+  #bulkClose{border:none;background:#f3f4f6;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;}
+  #bulkSearch{padding:8px 12px;border-bottom:1px solid #e5e7eb;display:flex;flex-direction:column;gap:6px;}
+  #bulkSearch .row,#bulkOps .row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  #bulkPanel input[type=text]{flex:1;min-width:0;padding:4px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:12px;}
+  #bulkPanel .seg{display:inline-flex;border:1px solid #d1d5db;border-radius:5px;overflow:hidden;}
+  #bulkPanel .seg button{border:none;background:#fff;padding:3px 9px;cursor:pointer;font-size:12px;color:#374151;}
+  #bulkPanel .seg button.on{background:#2563eb;color:#fff;}
+  #bulkErr{color:#dc2626;font-size:11px;}
+  #bulkStat{padding:5px 12px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:6px;}
+  #bulkStat span{flex:1;}
+  #bulkStat button,#bulkOps button{border:1px solid #d1d5db;background:#fff;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;}
+  #bulkStat button:hover,#bulkOps button:hover{background:#f3f4f6;}
+  #bulkList{overflow:auto;flex:1;min-height:60px;max-height:34vh;padding:2px 0;}
+  .bkRow{display:flex;align-items:center;gap:6px;padding:3px 12px;cursor:pointer;}
+  .bkRow:hover{background:#eff6ff;}
+  .bkRow.off{opacity:.45;}
+  .bkRow input{margin:0;flex:none;}
+  .bkRow .pg{flex:none;color:#6b7280;font-size:11px;min-width:30px;}
+  .bkRow .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .bkRow .nm .nn{color:#9ca3af;}
+  .bkRow .nm .to{color:#16a34a;}
+  .bkRow .fl{flex:none;display:flex;gap:2px;}
+  .bkRow .fl i{font-style:normal;font-size:10px;border-radius:3px;padding:0 3px;background:#e5e7eb;color:#9ca3af;}
+  .bkRow .fl i.on{background:#fde68a;color:#92400e;}
+  #bulkOps{padding:8px 12px;border-top:1px solid #e5e7eb;display:flex;flex-direction:column;gap:6px;}
+  #bulkOps .lb{width:84px;flex:none;color:#6b7280;}
+  #bulkOps .cnt{color:#9ca3af;font-size:11px;}
+  #bulkMsg{color:#16a34a;font-size:11px;min-height:14px;}
+  rect.part.bkhit{stroke:#f97316;stroke-width:3;stroke-dasharray:6 3;}
+  rect.part.bkhit.sel{stroke:#2563eb;}
 </style>
 </head>
 <body>
@@ -179,6 +214,7 @@
     <button id="cleanOrphans" title="未使用要素を一括削除：未関連枠→枠が無い空項目→項目が無い空セクションの順にまとめて掃除（枠のサイズ・位置は条件にしない）">未使用要素を掃除</button>
     <button id="nameToField" title="入力欄が1つだけ（1対1）の項目について、その入力欄名(part_name)を項目名(field_label)へ一括コピー（既存の項目名も上書き。入力欄名が空のものは対象外）">欄名→項目名</button>
     <button id="setObjName" title="ツリーで選択中の対象項目（Ctrl+クリックで複数選択）に、保存先のオブジェクト名(object_name)をまとめて設定。空欄でOKすると設定を削除（キー自体を消す＝カミレスの未設定状態）。項目名(field_name)は各項目のパネルで個別に入力">保存先Obj一括</button>
+    <button id="bulkFind" title="名前（項目名／欄名）のキーワード・正規表現で対象項目や入力欄を全ページから検索し、必須・枠線の非描画・値の非描画・名前をまとめて変更（Ctrl+F）">🔍検索・一括変更</button>
     <button id="clearSaveTarget" title="テンプレート全体の全対象項目から「保存先設定」(object_name / field_name)を一括削除（キー自体を消す＝カミレスの未設定状態）。Ctrl+Zで戻せます">保存先を全消去</button>
     <button id="renum" title="位置順に番号を振り直す">番号一括整列</button>
     <button id="alignX" title="選択中の入力欄を自動で「列」に分け、各列を最も左のXに揃える（1列だけ選べば全部同じXに。行列マトリクスもこれ1回で列整列）">列揃え(X)</button>
@@ -261,6 +297,25 @@
   <div id="cmpMsg" class="hint" style="padding:0 16px 8px"></div>
   <div id="cmpFoot"><button id="cmpCancel">キャンセル</button><button id="cmpRun">圧縮実行</button></div>
 </div></div>
+<div id="bulkPanel">
+  <div id="bulkHead"><h3>🔍 検索・一括変更</h3><button id="bulkClose" title="閉じる（Esc）">×</button></div>
+  <div id="bulkSearch">
+    <div class="row"><span class="seg" id="bkKind"><button data-v="tf" class="on">対象項目</button><button data-v="fp">入力欄</button></span>
+      <span class="seg" id="bkScope"><button data-v="all" class="on">全ページ</button><button data-v="cur">このページ</button></span></div>
+    <div class="row"><input type="text" id="bkKw" placeholder="名前のキーワード（空＝全件）"><label><input type="checkbox" id="bkRe"> 正規表現</label></div>
+    <div id="bulkErr"></div>
+  </div>
+  <div id="bulkStat"><span id="bkCount">—</span><button id="bkAll">全選択</button><button id="bkNone">全解除</button></div>
+  <div id="bulkList"></div>
+  <div id="bulkOps">
+    <div class="muted" id="bkTarget"></div>
+    <div id="bkAttrs"></div>
+    <div class="row"><span class="lb">置換</span><input type="text" id="bkRep" placeholder="キーワード部分をこの文字に（空＝削除）"><button id="bkRepDo">置換</button></div>
+    <div class="row"><span class="lb">先頭に追加</span><input type="text" id="bkPre" placeholder="付け足す文字"><button id="bkPreDo">追加</button></div>
+    <div class="row"><span class="lb">末尾に追加</span><input type="text" id="bkSuf" placeholder="付け足す文字"><button id="bkSufDo">追加</button></div>
+    <div id="bulkMsg"></div>
+  </div>
+</div>
 <script>/* pdf.js 3.11.174 (UMD) inlined for offline PDF page import */
 /**
  * @licstart The following is the entire license notice for the
@@ -321,6 +376,7 @@ const PLACEHOLDER='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/
 let J=null,page=0,scale=1;
 let sel=new Set(),chain={sec:null,tf:null,fp:null},tab='fp';
 let collapsed=new Set(),clipboard=null;
+let bulkHits=new Set(),BK={open:false,items:[],off:new Set(),err:'',m:null};// v50: 検索・一括変更パネルの状態（bulkHits＝キャンバスで強調する枠）
 let cmpBackup=null;// v27: 直前の「背景圧縮」の原画像・原座標をメモリに退避（Jには入れない＝書き出しに残らない）
 let tplFP=null,tplTF=null,tplSN=null;
 // v9: 既存要素が1つも無い（完全空白）JSONでも新規作成できるよう、カミレス実ファイルから採取した完全な既定テンプレ。idは付けない（mintで採番）。
@@ -361,13 +417,14 @@ function renumFp(tfid){fpsOfTf(tfid).forEach((p,i)=>p.part_order=i+1);}
 let past=[],future=[];
 function snap(){return JSON.stringify({L:J.form_layouts.map(f=>f.form_parts),S:J.target_field_sections});}
 function restore(s){const o=JSON.parse(s);o.L.forEach((fps,i)=>{J.form_layouts[i].form_parts=fps;});J.target_field_sections=o.S;}
-function commit(){future=[];past.push(snap());if(past.length>60)past.shift();updUndo();}
+function commit(){future=[];past.push(snap());if(past.length>60)past.shift();updUndo();if(BK.open)bkRefresh();}// v50: 他の編集でも検索結果を最新に
 function undo(){if(past.length>1){future.push(past.pop());restore(past[past.length-1]);afterHist();}}
 function redo(){if(future.length){const s=future.pop();past.push(s);restore(s);afterHist();}}
 // v42: treeMulti も必ずクリアする。restore() は target_field_sections を JSON.parse で作り直して差し替えるため、
 //      Undo/Redo 後の treeMulti は「失効した旧オブジェクト参照」を持ち続け、そのまま一括操作すると
 //      旧オブジェクトを書き換えるだけで J に反映されない（＝押しても何も起きない）サイレント失敗になる。
-function afterHist(){sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;renderAll();updUndo();}
+// v50: 検索パネルのチェック外し(BK.off)も旧オブジェクト参照なのでクリアする（renderAll 内で検索し直す）
+function afterHist(){sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;BK.off.clear();renderAll();updUndo();}
 function updUndo(){$('undo').disabled=past.length<=1;$('redo').disabled=future.length===0;}
 
 // ---------- import / export ----------
@@ -692,7 +749,7 @@ $('pick').onclick=()=>{if(!J)return;picking=!picking;$('pick').textContent=picki
 function pickAt(px,py){const g=imgData();if(!g)return;if(px<0||py<0||px>=g.W||py>=g.H)return;const i=(py*g.W+px)*4;$('detColor').value=rgb2hex(g.data[i],g.data[i+1],g.data[i+2]);}
 
 // ---------- render ----------
-function renderAll(){renderPages();renderPage();renderTree();renderPanel();updInfo();}
+function renderAll(){if(BK.open)bkCompute();renderPages();renderPage();renderTree();renderPanel();updInfo();if(BK.open)bkRenderList();}// v50: 描画前に検索し直す（強調枠・「このページ」を追随）
 function tplTotals(){const ns=J.target_field_sections.length;let ntf=0;J.target_field_sections.forEach(s=>ntf+=(s.target_fields||[]).length);let nfp=0;J.form_layouts.forEach(fl=>nfp+=(fl.form_parts||[]).length);return{ns,ntf,nfp};}
 function updInfo(){if(!J){$('info').textContent='—';return;}if(!L()){$('info').textContent=(J.name||'')+'（ページなし）';return;}const t=tplTotals();$('info').textContent=`${J.name||''}（セクション${t.ns}・項目${t.ntf}・入力欄${t.nfp}） | ${pageName(L(),page)}（P${page+1}/${J.form_layouts.length}） | 枠 ${L().form_parts.length} | 選択 ${sel.size}`;}
 // ページ名 = layout_title（= name = form_template_name）。無ければ「ページN」
@@ -784,7 +841,7 @@ function drawParts(){if(!J)return;const fl=L(),svg=$('svg');svg.innerHTML='';if(
      const b=document.createElementNS(SVGNS,'rect');b.setAttribute('class','bgedge');
      b.setAttribute('x',0);b.setAttribute('y',0);b.setAttribute('width',v.W);b.setAttribute('height',v.H);svg.appendChild(b);}}
   fl.form_parts.forEach((p,i)=>{if(p.width<=0||p.height<=0)return;
-  const r=document.createElementNS(SVGNS,'rect');r.setAttribute('class','part'+(sel.has(p)?' sel':''));r.setAttribute('x',p.x);r.setAttribute('y',p.y);r.setAttribute('width',p.width);r.setAttribute('height',p.height);r.dataset.i=i;svg.appendChild(r);});
+  const r=document.createElementNS(SVGNS,'rect');r.setAttribute('class','part'+(sel.has(p)?' sel':'')+(bulkHits.has(p)?' bkhit':''));r.setAttribute('x',p.x);r.setAttribute('y',p.y);r.setAttribute('width',p.width);r.setAttribute('height',p.height);r.dataset.i=i;svg.appendChild(r);});
   if(autoRegion){const rr=document.createElementNS(SVGNS,'rect');rr.setAttribute('class','region');rr.setAttribute('x',autoRegion.x0);rr.setAttribute('y',autoRegion.y0);rr.setAttribute('width',autoRegion.x1-autoRegion.x0);rr.setAttribute('height',autoRegion.y1-autoRegion.y0);svg.appendChild(rr);}
   drawBBox();}
 function bboxOf(set){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;set.forEach(p=>{x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x+p.width);y1=Math.max(y1,p.y+p.height);});return{x0,y0,x1,y1};}
@@ -1525,7 +1582,11 @@ $('center').addEventListener('wheel',e=>{
   c.scrollLeft=cx*r-ox;c.scrollTop=cy*r-oy;// カーソル下の点を固定
 },{passive:false});
 $('undo').onclick=undo;$('redo').onclick=redo;
-window.addEventListener('keydown',e=>{if(!J)return;const k=e.key.toLowerCase();const inInput=document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='SELECT'||document.activeElement.tagName==='TEXTAREA';// v49: TEXTAREA を追加。選択肢の複数行入力中に方向キーで枠が動いたり Delete で枠が消えるのを防ぐ
+window.addEventListener('keydown',e=>{
+  // v50: Esc で検索パネルを閉じる／Ctrl+F で開く（ブラウザの検索の代わり）
+  if(e.key==='Escape'&&BK.open){e.preventDefault();bkClose();return;}
+  if(!J)return;const k=e.key.toLowerCase();const inInput=document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='SELECT'||document.activeElement.tagName==='TEXTAREA';// v49: TEXTAREA を追加。選択肢の複数行入力中に方向キーで枠が動いたり Delete で枠が消えるのを防ぐ
+  if((e.ctrlKey||e.metaKey)&&k==='f'){e.preventDefault();bkOpen();return;}
   if((e.ctrlKey||e.metaKey)&&k==='z'){e.preventDefault();e.shiftKey?redo():undo();return;}
   if((e.ctrlKey||e.metaKey)&&k==='y'){e.preventDefault();redo();return;}
   if((e.ctrlKey||e.metaKey)&&k==='c'){if(!inInput){e.preventDefault();doCopy();}return;}
@@ -1543,6 +1604,111 @@ window.addEventListener('keydown',e=>{if(!J)return;const k=e.key.toLowerCase();c
     clearTimeout(nudgeTimer);nudgeTimer=setTimeout(()=>{nudgeTimer=null;commit();},400);
     return;}
 });
+// ===== v50: キーワード検索 → 一括変更（必須／枠線の非描画／値の非描画／名前） =====
+// 名前（対象項目=field_label／入力欄=part_name）で全ページ（またはこのページ）を検索し、
+// チェックした行にだけ属性・名前の変更をまとめて適用する。
+// ※「このページ」の判定・ページ番号の表示は【枠からの物理逆引き】。form_layout_number で引かない（絶対ルール6）。
+// ※ required / not_drawing_border / not_drawing_value は対象項目の「常在キー」なので単純代入でよい（v45 bchk と同じ）。
+//   入力欄モードでも属性は親の対象項目へ書く（入力欄側にはこれらのキーが無い）。
+// ※名前は既存キーをその場で書き換えるだけ。オブジェクトを作り直さないので往復保全・キー順は崩れない。
+const BK_ATTRS=[['required','必須'],['not_drawing_border','枠線の非描画'],['not_drawing_value','値の非描画']];
+function bkSeg(id){const b=$(id).querySelector('button.on');return b?b.dataset.v:'';}
+// 照合器。正規表現は test 用に g 無し（lastIndex の罠を避ける）、置換用に g 付きを別に作る
+function bkMatcher(){const kw=$('bkKw').value,re=$('bkRe').checked;
+  if(!kw)return{kw,test:()=>true,replace:null};
+  if(re){const t=new RegExp(kw),g=new RegExp(kw,'g');return{kw,test:s=>t.test(s),replace:(s,r)=>s.replace(g,r)};}
+  return{kw,test:s=>s.includes(kw),replace:(s,r)=>s.split(kw).join(r)};}
+function bkCompute(){BK.items=[];bulkHits=new Set();BK.err='';BK.m=null;if(!J)return;
+  let m;try{m=bkMatcher();}catch(e){BK.err='正規表現が正しくありません：'+e.message;return;}
+  BK.m=m;const kind=bkSeg('bkKind'),cur=bkSeg('bkScope')==='cur';
+  // 全ページの枠から 対象項目id → {ページ集合, 枠[]} を物理的に作る
+  const tfPg=new Map(),tfFp=new Map();
+  J.form_layouts.forEach((fl,i)=>(fl.form_parts||[]).forEach(p=>{const id=p.target_field;if(!id)return;
+    if(!tfPg.has(id)){tfPg.set(id,new Set());tfFp.set(id,[]);}tfPg.get(id).add(i+1);tfFp.get(id).push(p);}));
+  if(kind==='tf'){
+    eachTf((t,s)=>{const nm=t.field_label||'';if(!m.test(nm))return;
+      const pg=[...(tfPg.get(t.id)||[])].sort((a,b)=>a-b);
+      if(cur&&!pg.includes(page+1))return;
+      BK.items.push({obj:t,tf:t,pages:pg,name:nm,s});});
+    BK.items.sort((a,b)=>((a.pages[0]||1e9)-(b.pages[0]||1e9))||((a.s.form_layout_number||0)-(b.s.form_layout_number||0))
+      ||((a.s.section_number||0)-(b.s.section_number||0))||((a.tf.field_number||0)-(b.tf.field_number||0)));
+  } else {
+    const tfById=new Map();eachTf(t=>tfById.set(t.id,t));
+    J.form_layouts.forEach((fl,i)=>{if(cur&&i!==page)return;
+      (fl.form_parts||[]).slice().sort((p,q)=>(p.y-q.y)||(p.x-q.x)).forEach(p=>{const nm=p.part_name||'';if(!m.test(nm))return;
+        BK.items.push({obj:p,tf:tfById.get(p.target_field)||null,pages:[i+1],name:nm});});});
+  }
+  BK.items.forEach(it=>{if(BK.off.has(it.obj))return;
+    if(kind==='fp')bulkHits.add(it.obj);else (tfFp.get(it.obj.id)||[]).forEach(p=>bulkHits.add(p));});}
+const bkChecked=()=>BK.items.filter(it=>!BK.off.has(it.obj));
+function bkTfs(){const set=new Set();bkChecked().forEach(it=>{if(it.tf)set.add(it.tf);});return [...set];}
+function bkRenderList(){
+  const box=$('bulkList');box.innerHTML='';$('bulkErr').textContent=BK.err;
+  const kind=bkSeg('bkKind'),rep=$('bkRep').value,chk=bkChecked();
+  const canRep=!!(BK.m&&BK.m.kw&&BK.m.replace);
+  $('bkCount').textContent=BK.err?'—':('ヒット '+BK.items.length+' 件 ／ 選択 '+chk.length+' 件');
+  const LIM=1000;
+  BK.items.slice(0,LIM).forEach(it=>{
+    const r=document.createElement('div');r.className='bkRow'+(BK.off.has(it.obj)?' off':'');
+    const cb=document.createElement('input');cb.type='checkbox';cb.checked=!BK.off.has(it.obj);
+    cb.onclick=e=>{e.stopPropagation();cb.checked?BK.off.delete(it.obj):BK.off.add(it.obj);bkRefresh();};
+    const pg=document.createElement('span');pg.className='pg';pg.textContent=it.pages.length?('P'+it.pages.join(',')):'枠無';
+    const nm=document.createElement('span');nm.className='nm';
+    if(it.name){nm.textContent=it.name;
+      if(rep&&canRep&&!BK.off.has(it.obj)){const nv=BK.m.replace(it.name,rep);
+        if(nv!==it.name){const to=document.createElement('span');to.className='to';to.textContent=' → '+nv;nm.appendChild(to);}}}
+    else{const nn=document.createElement('span');nn.className='nn';nn.textContent='(無名)';nm.appendChild(nn);}
+    nm.title=it.name+(it.tf&&kind==='fp'?('（項目：'+(it.tf.field_label||'')+'）'):'');
+    const fl=document.createElement('span');fl.className='fl';
+    BK_ATTRS.forEach(([k,lb])=>{const i=document.createElement('i');const on=!!(it.tf&&it.tf[k]===true);
+      i.textContent=lb==='必須'?'必':lb==='枠線の非描画'?'枠':'値';i.title=lb+(on?'：ON':'：OFF');
+      if(on)i.className='on';fl.appendChild(i);});
+    r.appendChild(cb);r.appendChild(pg);r.appendChild(nm);r.appendChild(fl);
+    r.onclick=()=>bkJump(it,kind);
+    box.appendChild(r);});
+  if(BK.items.length>LIM){const r=document.createElement('div');r.className='bkRow';r.innerHTML='<span class="muted">… 他 '+(BK.items.length-LIM)+' 件（一覧は省略。操作は全件に効きます）</span>';box.appendChild(r);}
+  // 属性（対象項目単位）
+  const tfs=bkTfs(),ab=$('bkAttrs');ab.innerHTML='';
+  $('bkTarget').innerHTML=kind==='fp'
+    ?('属性は入力欄の親の<b>対象項目 '+tfs.length+' 件</b>に適用されます（名前は入力欄 '+chk.length+' 件の欄名）')
+    :('<b>対象項目 '+tfs.length+' 件</b>に適用されます（名前は項目名）');
+  BK_ATTRS.forEach(([k,lb])=>{const on=tfs.filter(t=>t[k]===true).length;
+    const row=document.createElement('div');row.className='row';row.style.marginBottom='4px';
+    row.innerHTML='<span class="lb">'+lb+'</span>';
+    const bOn=document.createElement('button');bOn.textContent='ON';bOn.onclick=()=>bkSetAttr(k,true,lb);
+    const bOff=document.createElement('button');bOff.textContent='OFF';bOff.onclick=()=>bkSetAttr(k,false,lb);
+    const c=document.createElement('span');c.className='cnt';c.textContent=on+' / '+tfs.length+' が ON';
+    row.appendChild(bOn);row.appendChild(bOff);row.appendChild(c);ab.appendChild(row);});
+  $('bkRepDo').disabled=!canRep;
+  $('bkRep').placeholder=canRep?'キーワード部分をこの文字に（空＝削除）':'置換にはキーワードが必要';}
+function bkRefresh(){if(!BK.open)return;bkCompute();bkRenderList();drawParts();}
+function bkMsg(t){$('bulkMsg').textContent=t;}
+function bkSetAttr(k,v,lb){const tfs=bkTfs();if(!tfs.length){bkMsg('対象がありません');return;}
+  tfs.forEach(t=>{t[k]=v;});commit();renderAll();bkMsg(lb+' を '+tfs.length+' 件 '+(v?'ON':'OFF')+' にしました');}
+function bkRename(fn,what){const chk=bkChecked();if(!chk.length){bkMsg('対象がありません');return;}
+  const key=bkSeg('bkKind')==='fp'?'part_name':'field_label';let n=0;
+  chk.forEach(it=>{const o=it.obj,old=o[key]||'',nv=fn(old);if(nv!==old){o[key]=nv;n++;}});
+  if(!n){bkMsg('変更はありませんでした');return;}
+  commit();renderAll();
+  bkMsg(what+'：'+n+' 件の名前を変更しました'+(bkChecked().length<chk.length?'（条件に合わなくなった行は一覧から外れました）':''));}
+// 行クリック：そのページへ移動して選択（パネルは開いたまま）
+function bkJump(it,kind){const pg=it.pages.length?(it.pages.includes(page+1)?page:it.pages[0]-1):page;
+  if(pg!==page){page=pg;sel.clear();chain={sec:null,tf:null,fp:null};treeMulti.clear();treeMultiKind=null;renderAll();}
+  selectNode(kind,it.obj);}
+function bkOpen(){if(!J)return;BK.open=true;$('bulkPanel').classList.add('show');bkRefresh();$('bkKw').focus();$('bkKw').select();}
+function bkClose(){BK.open=false;$('bulkPanel').classList.remove('show');bulkHits=new Set();if(J)drawParts();}
+$('bulkFind').onclick=()=>BK.open?bkClose():bkOpen();
+$('bulkClose').onclick=bkClose;
+['bkKind','bkScope'].forEach(id=>$(id).querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  $(id).querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));BK.off.clear();bkMsg('');bkRefresh();}));
+$('bkKw').oninput=()=>{bkMsg('');bkRefresh();};$('bkRe').onchange=()=>bkRefresh();
+$('bkRep').oninput=()=>bkRenderList();
+$('bkAll').onclick=()=>{BK.items.forEach(it=>BK.off.delete(it.obj));bkRefresh();};
+$('bkNone').onclick=()=>{BK.items.forEach(it=>BK.off.add(it.obj));bkRefresh();};
+$('bkRepDo').onclick=()=>{const m=BK.m;if(!m||!m.kw)return;const r=$('bkRep').value;bkRename(s=>m.replace(s,r),'置換');};
+$('bkPreDo').onclick=()=>{const v=$('bkPre').value;if(!v)return;$('bkPre').value='';bkRename(s=>v+s,'先頭に追加');};// 実行後は空に（二重適用の防止）
+$('bkSufDo').onclick=()=>{const v=$('bkSuf').value;if(!v)return;$('bkSuf').value='';bkRename(s=>s+v,'末尾に追加');};
+[['bkRep','bkRepDo'],['bkPre','bkPreDo'],['bkSuf','bkSufDo']].forEach(([i,b])=>{$(i).onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$(b).click();}};});
 // v19: 左右パネルの幅をドラッグで調整
 function initSplit(id,varName,side){const el=$(id);if(!el)return;
   el.addEventListener('mousedown',e=>{e.preventDefault();const app=$('app'),startX=e.clientX;
