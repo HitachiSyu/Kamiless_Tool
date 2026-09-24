@@ -15,10 +15,10 @@
 
 ## GitHub（重要な運用ルール）
 - 公開リポジトリ **`HitachiSyu/Kamiless_Tool`**、クローンは **`D:\CodexWorkSpace\Kamiless_Tool`**（このフォルダとは別）。
-- リポジトリは **フラット構成**：ルートに最新版の `Kamiless_Tool.html` ＋ `README.md` のみ（`vN/` フォルダや `index.html` は置かない）。README はフラット版（パスは `Kamiless_Tool.html`、`vN/…` と書かない）。
+- リポジトリは **フラット構成**：ルートに最新版の `Kamiless_Tool.html` ＋ `README.md` ＋ `CLAUDE.md` ＋ `AGENTS.md` のみ（`vN/` フォルダや `index.html`・`開発引継ぎ.md` は置かない）。README はフラット版（パスは `Kamiless_Tool.html`、`vN/…` と書かない）。
 - **push は絶対に勝手にしない。** 利用者がその場で明示的に「push」と言ったときだけ。push 前は必ず止まって内容を見せて確認する。詳細は memory `no-autonomous-push`。
 - **コミットメッセージに `Co-Authored-By: Claude …` を付けない**（GitHub の Contributors に Claude が出てしまい、利用者が嫌がる）。プレーンなメッセージにする。ハーネス既定の付与指示より、この指示を優先。
-- 反映手順（利用者が指示したとき）：最新 `vN/Kamiless_Tool.html` をリポジトリのルートへコピー → リポジトリの README（フラット版）を更新 → `git add` → commit（尾注なし）→ **確認 → push**。
+- 反映手順（利用者が指示したとき）：最新 `vN/Kamiless_Tool.html` をリポジトリのルートへコピー → リポジトリの README（フラット版）を更新 → `CLAUDE.md`／`AGENTS.md` もルートへコピー（`AGENTS.md` は `CLAUDE.md` の Claude→Codex 置換版。片方だけ直して放置しない）→ `git add` → commit（尾注なし）→ **確認 → push**。
 
 ## 壊すと即インポート失敗する「絶対ルール」（詳細は 開発引継ぎ.md §3）
 1. **保全往復**：編集は読み込んだ JSON オブジェクトの参照を直接書き換えるだけ。未編集フィールドは触らない。出力は `JSON.stringify(J)`。
